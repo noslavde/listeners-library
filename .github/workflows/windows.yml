@@ -1,0 +1,105 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify release version
+        env:
+          BUILD_REF: ${{ github.ref }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($version -ne $tauri) { throw 'Frontend and installer versions differ.' }
+          if ($env:BUILD_REF.StartsWith('refs/tags/') -and $env:BUILD_REF -ne "refs/tags/v$version") {
+            throw 'Release tag must match the application version.'
+          }
+      - name: Select stable Rust MSVC
+        run: |
+          rustup default stable-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure verified native Perl
+        run: ./scripts/ci-perl.ps1
+      - name: Cache native dependencies
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-2022-rust-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            windows-2022-rust-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-
+      - run: npm ci
+      - run: npm test
+      - name: Fetch locked native dependencies
+        run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+      - name: Test native release build
+        run: npm run test:native -- --release --locked
+      - name: Build Windows installer
+        run: npm run build:windows
+      - name: Prepare reviewed download files
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Path deployment -Force | Out-Null
+          $source = "src-tauri/target/release/bundle/nsis/Audible Desktop_${version}_x64-setup.exe"
+          $filename = "Audible-Desktop-${version}-Windows-x64-Setup.exe"
+          Copy-Item -LiteralPath $source -Destination "deployment/$filename"
+          $hash = (Get-FileHash -LiteralPath "deployment/$filename" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $filename" | Set-Content -LiteralPath deployment/SHA256SUMS.txt
+          Copy-Item -LiteralPath docs/TESTER_GUIDE.md -Destination deployment/TESTER_GUIDE.md
+          Copy-Item -LiteralPath docs/PRIVACY.md -Destination deployment/PRIVACY.md
+          Copy-Item -LiteralPath src-tauri/resources/THIRD_PARTY_LICENSES.txt -Destination deployment/THIRD_PARTY_LICENSES.txt
+      - name: Upload Windows test package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Audible-Desktop-Windows-x64
+          path: deployment/
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Audible-Desktop-Windows-x64
+          path: deployment
+      - name: Create draft test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" deployment/* --verify-tag --draft --prerelease \
+            --title "Audible Desktop $GITHUB_REF_NAME" \
+            --notes "Unsigned Windows x64 test build. Read TESTER_GUIDE.md and PRIVACY.md before installing. Review the live release checklist before publishing."

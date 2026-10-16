@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Audible Desktop",
+  "version": "0.1.10",
+  "identifier": "dev.audible.desktop.lab",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build && npm run notices && npm run check:release",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "devtools": false,
+        "title": "Audible Desktop",
+        "width": 1280,
+        "height": 850
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data: https://m.media-amazon.com https://images-na.ssl-images-amazon.com; media-src 'self' blob:; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Unofficial Audible desktop companion",
+    "longDescription": "An unofficial Windows companion with a local library, notes and a compact always-on-top player. Not affiliated with Audible or Amazon.",
+    "resources": {
+      "resources/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Audible Desktop",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

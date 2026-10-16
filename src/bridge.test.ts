@@ -1,0 +1,33 @@
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+import {describe,it,expect} from 'vitest';
+const source=readFileSync(new URL('../src-tauri/src/bridge.js',import.meta.url),'utf8');
+const volumeSource=readFileSync(new URL('../src-tauri/src/volume.js',import.meta.url),'utf8');
+function fixture(chapterTitles:string[]=[],websiteFlags:Record<string,string>={}){
+ let chapterClicks=0;
+ const chapterRows=chapterTitles.map(textContent=>({textContent,disabled:false,getClientRects:()=>[{}],getAttribute:()=>null,closest(){return this;},click:()=>{chapterClicks++;}}));
+ const scope={getClientRects:()=>[{}],getAttribute:()=>null,querySelectorAll:()=>chapterRows};
+ const ranges=(end:number)=>({length:1,start:()=>0,end:()=>end});
+ const media={paused:false,ended:false,readyState:4,duration:7200,currentTime:100,playbackRate:1,volume:1,muted:false,mediaKeys:{},seekable:ranges(300),buffered:ranges(200),addEventListener:()=>{},play:()=>Promise.resolve(),pause:()=>{media.paused=true;}};
+ const sample={...media,paused:true,duration:60,currentTime:0};
+ const location={protocol:'https:',hostname:'www.audible.com',pathname:'/webplayer',href:'https://www.audible.com/webplayer?asin=B012345678'};
+ let tick=()=>{};const window={} as {__audibleAdapter:{command:(action:string,value:number)=>void;configure:(config:{speed:number;rewind:number;pauseChapter:boolean;chapters:number[];volume?:number})=>void}};
+ runInNewContext(volumeSource,{window,location,URL,WeakMap,Number,Math});
+ runInNewContext(source,{window,location,document:{getElementById:()=>({getAttribute:(name:string)=>websiteFlags[name]??null}),querySelectorAll:(selector:string)=>selector==='audio,video'?[sample,media]:selector==='button,[role="button"]'?[]:chapterRows.length?[scope]:[],querySelector:()=>null},URL,setInterval:(f:()=>void)=>{tick=f;},Date,Math,Number,JSON,encodeURIComponent});
+ return {media,sample,location,window:window as typeof window&{__audibleAdapter:{chapter:(chapter:{position:number;title:string})=>void}},tick,chapterClicks:()=>chapterClicks};
+}
+describe('official media seek boundary',()=>{
+ it('applies app-only volume and reports effective protected-player output',()=>{const f=fixture();f.window.__audibleAdapter.command('volume',.25);f.tick();let state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(f.media.volume).toBe(.25);expect(state.volume).toBe(.25);f.window.__audibleAdapter.command('volume',1);f.tick();state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(state.volume).toBe(1);expect(state).not.toHaveProperty('volumeBoost');expect(f.media.paused).toBe(false);});
+ it('restores saved silence without changing position or playback',()=>{const f=fixture();f.window.__audibleAdapter.configure({speed:1,rewind:5,pauseChapter:false,chapters:[],volume:0});expect(f.media.volume).toBe(0);expect(f.media.currentTime).toBe(100);expect(f.media.paused).toBe(false);f.media.muted=true;f.window.__audibleAdapter.command('volume',1);expect(f.media.muted).toBe(false);expect(f.media.volume).toBe(1);});
+ it('applies saved speed once per configuration without fighting official controls',()=>{const f=fixture();const config={speed:1.5,rewind:10,pauseChapter:false,chapters:[0,200]};f.window.__audibleAdapter.configure(config);expect(f.media.playbackRate).toBe(1.5);f.media.playbackRate=2;f.window.__audibleAdapter.configure(config);expect(f.media.playbackRate).toBe(2);f.window.__audibleAdapter.configure({...config,speed:1.75});expect(f.media.playbackRate).toBe(1.75);});
+ it('pauses at authoritative chapter boundaries during continuous playback',()=>{const f=fixture();f.window.__audibleAdapter.configure({speed:1,rewind:5,pauseChapter:true,chapters:[0,200,400]});f.media.currentTime=199;f.tick();f.media.currentTime=200.2;f.tick();expect(f.media.paused).toBe(true);});
+ it('does not mistake an intentional chapter seek for finishing the chapter',()=>{const f=fixture();f.window.__audibleAdapter.configure({speed:1,rewind:5,pauseChapter:true,chapters:[0,200,400]});f.tick();f.window.__audibleAdapter.command('seek',200);f.tick();expect(f.media.paused).toBe(false);});
+ it('reports only the website authentication and access booleans, not page secrets',()=>{const f=fixture([],{'data-isUserLoggedIn':'false','data-isConsumable':'false','data-token':'private'});f.tick();const state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(state.website_signed_in).toBe(false);expect(state.website_consumable).toBe(false);expect(f.location.href).not.toContain('private');});
+ it('does not assume website sign-in when server flags are absent',()=>{const f=fixture();f.tick();const state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(state.website_signed_in).toBe(null);expect(state.website_consumable).toBe(null);});
+ it('identifies a sample without advertising full playback controls',()=>{const f=fixture();f.location.href+='&isSample=true';f.tick();const state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(state.sample).toBe(true);expect(state.available).toBe(false);});
+ it('blocks an unloaded target without resetting playback',()=>{const f=fixture();f.window.__audibleAdapter.command('seek',1800);expect(f.media.currentTime).toBe(100);expect(f.sample.currentTime).toBe(0);expect(f.location.href).toContain('unsupported_seek');});
+ it('uses the playing media instead of the first sample element',()=>{const f=fixture();f.window.__audibleAdapter.command('seek',200);expect(f.media.currentTime).toBe(200);expect(f.sample.currentTime).toBe(0);});
+ it('reports seekable and buffered ranges separately',()=>{const f=fixture();f.tick();const state=JSON.parse(new URL(f.location.href).searchParams.get('payload')!);expect(state.seekable).toEqual([{start:0,end:300}]);expect(state.buffered).toEqual([{start:0,end:200}]);expect(state.duration).toBe(7200);});
+ it('routes an out-of-range chapter through the official chapter row',()=>{const f=fixture(['Later chapter']);f.window.__audibleAdapter.chapter({position:1800,title:'Later chapter'});expect(f.chapterClicks()).toBe(1);expect(f.media.currentTime).toBe(100);});
+ it('reports an unmatched chapter without resetting media',()=>{const f=fixture();f.window.__audibleAdapter.chapter({position:1800,title:'Later chapter'});expect(f.media.currentTime).toBe(100);expect(f.location.href).toContain('chapter_unavailable');});
+});
