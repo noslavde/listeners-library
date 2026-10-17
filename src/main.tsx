@@ -231,6 +231,11 @@ function App() {
         <div>
           <small>YOUR AUDIOBOOK LIBRARY</small>
           <h1>Listener’s Library</h1>
+          {macExperimental && (
+            <p role="status">
+              Experimental macOS alpha · login and playback untested
+            </p>
+          )}
         </div>
         <div className="header-actions">
           <ThemePicker settings={settings} />

@@ -24,6 +24,9 @@ fn failure() -> String {
 fn wrapping_key(create: bool) -> Result<Zeroizing<Vec<u8>>, String> {
     let _guard = KEY_LOCK.lock().map_err(|_| failure())?;
     let entry = keyring::Entry::new(SERVICE, "wrapping-key-v1").map_err(|_| failure())?;
+    stored_key(&entry, create)
+}
+fn stored_key(entry: &keyring::Entry, create: bool) -> Result<Zeroizing<Vec<u8>>, String> {
     let key = match entry.get_secret() {
         Ok(key) => Zeroizing::new(key),
         Err(keyring::Error::NoEntry) if create => {
@@ -31,48 +34,80 @@ fn wrapping_key(create: bool) -> Result<Zeroizing<Vec<u8>>, String> {
             OsRng.fill_bytes(&mut key);
             entry.set_secret(&key).map_err(|_| failure())?;
             // Verify persistence before any dependent data can be published.
-            if entry.get_secret().map(Zeroizing::new).map_err(|_| failure())?.as_slice() != key.as_slice() {
+            if entry
+                .get_secret()
+                .map(Zeroizing::new)
+                .map_err(|_| failure())?
+                .as_slice()
+                != key.as_slice()
+            {
                 return Err(failure());
             }
             key
         }
         Err(_) => return Err(failure()),
     };
-    if key.len() != 32 { return Err(failure()); }
+    if key.len() != 32 {
+        return Err(failure());
+    }
     Ok(key)
 }
 fn seal(key: &[u8], input: &[u8]) -> Result<Vec<u8>, String> {
-    if input.is_empty() || input.len() > LIMIT { return Err("Invalid protected storage size".into()); }
+    if input.is_empty() || input.len() > LIMIT {
+        return Err("Invalid protected storage size".into());
+    }
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| failure())?;
     let mut nonce = [0; 12];
     OsRng.fill_bytes(&mut nonce);
-    let encrypted = cipher.encrypt(Nonce::from_slice(&nonce), Payload { msg: input, aad: SERVICE.as_bytes() }).map_err(|_| failure())?;
+    let encrypted = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: input,
+                aad: SERVICE.as_bytes(),
+            },
+        )
+        .map_err(|_| failure())?;
     Ok([HEADER, &nonce, &encrypted].concat())
 }
 fn unseal(key: &[u8], input: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
     let offset = HEADER.len() + 12;
-    if !input.starts_with(HEADER) || input.len() <= offset + 16 || input.len() > LIMIT + offset + 16 {
+    if !input.starts_with(HEADER) || input.len() <= offset + 16 || input.len() > LIMIT + offset + 16
+    {
         return Err(failure());
     }
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| failure())?;
-    cipher.decrypt(Nonce::from_slice(&input[HEADER.len()..offset]), Payload { msg: &input[offset..], aad: SERVICE.as_bytes() })
-        .map(Zeroizing::new).map_err(|_| failure())
+    cipher
+        .decrypt(
+            Nonce::from_slice(&input[HEADER.len()..offset]),
+            Payload {
+                msg: &input[offset..],
+                aad: SERVICE.as_bytes(),
+            },
+        )
+        .map(Zeroizing::new)
+        .map_err(|_| failure())
 }
 pub fn protect(input: &[u8]) -> Result<Vec<u8>, String> {
-    seal(&wrapping_key(false)?, input)
+    let key = wrapping_key(false)?;
+    seal(key.as_slice(), input)
 }
 pub fn initialize(allow_create: bool) -> Result<(), String> {
     wrapping_key(allow_create).map(|_| ())
 }
 pub fn forget_wrapping_key() -> Result<(), String> {
     let _guard = KEY_LOCK.lock().map_err(|_| failure())?;
-    match keyring::Entry::new(SERVICE, "wrapping-key-v1").map_err(|_| failure())?.delete_credential() {
+    match keyring::Entry::new(SERVICE, "wrapping-key-v1")
+        .map_err(|_| failure())?
+        .delete_credential()
+    {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(_) => Err(failure()),
     }
 }
 pub fn unprotect(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
-    unseal(&wrapping_key(false)?, input)
+    let key = wrapping_key(false)?;
+    unseal(key.as_slice(), input)
 }
 pub fn restrict_directory(path: &Path) -> Result<(), String> {
     crate::storage::reject_link(path)?;
@@ -90,9 +125,12 @@ mod tests {
         assert!(!blob.windows(secret.len()).any(|w| w == secret));
         assert_eq!(unseal(&key, &blob).unwrap().as_slice(), secret);
         assert_ne!(blob, seal(&key, secret).unwrap());
-        assert!(unseal(&[43;32], &blob).is_err());
-        for n in 0..blob.len() { assert!(unseal(&key, &blob[..n]).is_err()); }
-        let last = blob.len()-1; blob[last] ^= 1;
+        assert!(unseal(&[43; 32], &blob).is_err());
+        for n in 0..blob.len() {
+            assert!(unseal(&key, &blob[..n]).is_err());
+        }
+        let last = blob.len() - 1;
+        blob[last] ^= 1;
         assert!(unseal(&key, &blob).is_err());
     }
     #[test]
@@ -101,5 +139,23 @@ mod tests {
         let data = b"synthetic native Keychain test";
         let blob = protect(data).unwrap();
         assert_eq!(unprotect(&blob).unwrap().as_slice(), data);
+    }
+    #[test]
+    fn missing_keychain_key_is_not_replaced_on_recovery() {
+        let service = format!(
+            "dev.noslavde.listeners-library.macos-test-{}",
+            rand::random::<u64>()
+        );
+        let entry = keyring::Entry::new(&service, "synthetic-key").unwrap();
+        assert!(stored_key(&entry, false).is_err());
+        let key = stored_key(&entry, true).unwrap();
+        let blob = seal(&key, b"synthetic preserved data").unwrap();
+        entry.delete_credential().unwrap();
+        assert!(stored_key(&entry, false).is_err());
+        assert!(matches!(entry.get_secret(), Err(keyring::Error::NoEntry)));
+        assert_eq!(
+            unseal(&key, &blob).unwrap().as_slice(),
+            b"synthetic preserved data"
+        );
     }
 }

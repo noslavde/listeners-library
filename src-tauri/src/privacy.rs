@@ -268,7 +268,7 @@ pub fn harden_view(_: &tauri::WebviewWindow) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
-    use objc2::{MainThreadMarker, runtime::AnyObject};
+    use objc2::MainThreadMarker;
     use objc2_foundation::NSDate;
     use objc2_web_kit::{WKWebView, WKWebsiteDataStore};
     let (tx, rx) = std::sync::mpsc::channel();
@@ -277,8 +277,7 @@ pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
         // the completion block until removal finishes; only the sender escapes.
         let Some(mtm) = MainThreadMarker::new() else { return; };
         unsafe {
-            let object = &*(view.inner() as *const AnyObject);
-            let webview: &WKWebView = &*(object as *const AnyObject as *const WKWebView);
+            let Some(webview) = (view.inner() as *const WKWebView).as_ref() else { return; };
             let store = webview.configuration().websiteDataStore();
             let types = WKWebsiteDataStore::allWebsiteDataTypes(mtm);
             let date = NSDate::dateWithTimeIntervalSince1970(0.0);

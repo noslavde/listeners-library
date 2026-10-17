@@ -89,7 +89,7 @@ fn connect(path: &Path, key: &[u8]) -> Result<Connection, String> {
         .map_err(fail)?;
     c.pragma_update(None, "secure_delete", "ON").map_err(fail)?;
     c.busy_timeout(Duration::from_secs(5)).map_err(fail)?;
-    c.query_row("SELECT count(*) FROM sqlite_master",[],|r|r.get::<_,i64>(0)).map_err(|_|"Cannot unlock the encrypted library. Its key may be missing, damaged or belong to another Windows account. No data was reset.".to_string())?;
+    c.query_row("SELECT count(*) FROM sqlite_master",[],|r|r.get::<_,i64>(0)).map_err(|_|"Cannot unlock the encrypted library. Its key may be missing, damaged or belong to another computer account. No data was reset.".to_string())?;
     Ok(c)
 }
 fn integrity(c: &Connection) -> Result<(), String> {
@@ -356,6 +356,26 @@ pub fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn linked_storage_is_rejected_and_permissions_are_private() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = temp();
+        let target = root.join("outside");
+        fs::create_dir(&target).unwrap();
+        let linked = root.join("linked");
+        symlink(&target, &linked).unwrap();
+        assert!(Storage::initialize(&linked, false).is_err());
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        fs::remove_file(&linked).unwrap();
+        let store = Storage::initialize(&root.join("owned"), false).unwrap();
+        assert_eq!(fs::metadata(&store.dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(store.dir.join("database.key")).unwrap().permissions().mode() & 0o777, 0o600);
+        symlink(&target, store.dir.join("settings.sqlite")).unwrap();
+        assert!(store.open_profile(None).is_err());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn account_databases_are_isolated_and_old_unassigned_data_is_not_imported() {
         let root = temp();

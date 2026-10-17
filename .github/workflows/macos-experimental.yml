@@ -66,7 +66,19 @@ jobs:
       - name: Prepare frontend and platform notices
         run: node scripts/prepare-macos.mjs
       - name: Test native storage, account lifecycle and controls
-        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+        run: |
+          # Ephemeral runner; synthetic test records only, no user account.
+          security create-keychain -p synthetic-ci-only "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          security default-keychain -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          security unlock-keychain -p synthetic-ci-only "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+      - name: Remove synthetic test Keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/listeners-library-tests.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          fi
       - name: Build ad-hoc signed experimental disk image
         run: npm run build:macos -- --target "$LL_MAC_TARGET" --locked
       - name: Verify app signature and architecture
