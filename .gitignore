@@ -17,6 +17,12 @@ src-tauri/resources/THIRD_PARTY_LICENSES.txt
 *.pem
 *.pfx
 *.p12
+*.p8
+*.keychain*
+*.mobileprovision
+*.dmg
+*.app/
+*.dSYM/
 *.exe
 *.msi
 *.zip

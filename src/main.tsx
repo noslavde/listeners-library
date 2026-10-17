@@ -1,3 +1,4 @@
+import { macExperimental, protectionName } from "./platform";
 import React, {
   useCallback,
   useEffect,
@@ -230,6 +231,11 @@ function App() {
         <div>
           <small>YOUR AUDIOBOOK LIBRARY</small>
           <h1>Listener’s Library</h1>
+          {macExperimental && (
+            <p role="status">
+              Experimental macOS alpha · login and playback untested
+            </p>
+          )}
         </div>
         <div className="header-actions">
           <ThemePicker settings={settings} />
@@ -446,20 +452,22 @@ function App() {
       <details className="app-details">
         <summary>About & privacy</summary>
         <p>
-          Listener’s Library · Version 0.2.1 · Beta. Unofficial and unaffiliated
-          with Audible or Amazon. Currently supports the US marketplace.
+          Listener’s Library · Version 0.2.1 ·{" "}
+          {macExperimental ? "Experimental macOS alpha — untested" : "Beta"}.
+          Unofficial and unaffiliated with Audible or Amazon. Currently supports
+          the US marketplace.
         </p>
         <p>
           Sign in only on official Amazon/Audible pages. Account tokens and the
-          library key are protected by Windows encryption. Library data, notes
-          and preferences use an encrypted local database; website sign-in stays
-          in its separate browser profile on this PC. Playback and library sync
+          library key are protected by {protectionName}. Library data, notes and
+          preferences use an encrypted local database; website sign-in stays in
+          its separate browser profile on this device. Playback and library sync
           connect to Audible. No app analytics are collected.
         </p>
         <p>
-          Use Sign out before sharing your Windows account. Cached books and
-          notes remain on this PC. Third-party license notices are included with
-          the installation.
+          Use Sign out before sharing your computer account. Cached books and
+          notes remain on this device. Third-party license notices are included
+          with the installation.
         </p>
       </details>
       {connected && active && (
@@ -587,7 +595,7 @@ function OfficialControls({
       <div>
         <strong>Official Audible playback</strong>
         <p>
-          Sign-in is remembered on this PC. Open Audible if playback needs
+          Sign-in is remembered on this device. Open Audible if playback needs
           attention or your account needs verification.
         </p>
       </div>

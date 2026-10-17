@@ -245,7 +245,7 @@ pub(crate) async fn enter_mini_player(app: tauri::AppHandle) -> Result<(), Strin
         "mini-player",
         WebviewUrl::App("index.html?mini=1".into()),
     )
-    .title("Audible · mini player")
+    .title("Listener’s Library · mini player")
     .inner_size(380.0, 240.0)
     .min_inner_size(340.0, 220.0)
     .always_on_top(true)

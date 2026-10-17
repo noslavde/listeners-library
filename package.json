@@ -10,6 +10,8 @@
     "test": "vitest run",
     "notices": "node scripts/build-notices.mjs",
     "build:windows": "node scripts/native-build.mjs build",
+    "build:macos": "node scripts/macos-build.mjs build",
+    "dev:macos": "node scripts/macos-build.mjs dev",
     "dev:desktop": "node scripts/native-build.mjs dev",
     "check:release": "node scripts/check-release.mjs",
     "test:native": "node scripts/native-build.mjs test",

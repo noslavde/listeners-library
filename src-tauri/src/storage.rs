@@ -4,12 +4,13 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::windows::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::Duration,
 };
 use tauri::Manager;
 use zeroize::Zeroizing;
+#[cfg(windows)]
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 
 pub const SCOPE: &str = if cfg!(debug_assertions) {
     "development-v2"
@@ -25,22 +26,41 @@ fn fail(_: impl std::fmt::Display) -> String {
     "Encrypted storage operation failed. Your existing data was kept; close older app versions and retry.".into()
 }
 pub(crate) fn reject_link(path: &Path) -> Result<(), String> {
-    if fs::symlink_metadata(path)
-        .map(|m| m.file_attributes() & 0x400 != 0)
-        .unwrap_or(false)
-    {
+    let linked = match fs::symlink_metadata(path) {
+        #[cfg(windows)]
+        Ok(m) => m.file_attributes() & 0x400 != 0,
+        #[cfg(not(windows))]
+        Ok(m) => m.file_type().is_symlink(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err("Cannot inspect protected storage path".into()),
+    };
+    if linked {
         return Err("Linked storage paths are not supported".into());
     }
     Ok(())
 }
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(fail)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(target_os = "macos")]
+    { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+    let mut f = options.open(path).map_err(fail)?;
     f.write_all(bytes).map_err(fail)?;
     f.sync_all().map_err(fail)
+}
+/// OS lifetime lock shared by normal startup and destructive reset.
+pub(crate) fn profile_lock(path: &Path) -> Result<File, String> {
+    reject_link(path)?;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(windows)]
+    options.share_mode(0);
+    #[cfg(target_os = "macos")]
+    { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+    let file = options.open(path).map_err(fail)?;
+    #[cfg(target_os = "macos")]
+    file.try_lock().map_err(fail)?;
+    Ok(file)
 }
 fn key_text(key: &[u8]) -> Zeroizing<String> {
     use std::fmt::Write;
@@ -69,7 +89,7 @@ fn connect(path: &Path, key: &[u8]) -> Result<Connection, String> {
         .map_err(fail)?;
     c.pragma_update(None, "secure_delete", "ON").map_err(fail)?;
     c.busy_timeout(Duration::from_secs(5)).map_err(fail)?;
-    c.query_row("SELECT count(*) FROM sqlite_master",[],|r|r.get::<_,i64>(0)).map_err(|_|"Cannot unlock the encrypted library. Its key may be missing, damaged or belong to another Windows account. No data was reset.".to_string())?;
+    c.query_row("SELECT count(*) FROM sqlite_master",[],|r|r.get::<_,i64>(0)).map_err(|_|"Cannot unlock the encrypted library. Its key may be missing, damaged or belong to another computer account. No data was reset.".to_string())?;
     Ok(c)
 }
 fn integrity(c: &Connection) -> Result<(), String> {
@@ -177,12 +197,14 @@ fn migrate(legacy: &Path, dir: &Path, key: &[u8]) -> Result<(), String> {
                 return Err("The old library changed during migration. Close older versions; both copies were kept for recovery.".into());
             }
             // Refuse deletion while an older Windows process has this database open.
+            #[cfg(windows)]
             let exclusive = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .share_mode(0)
                 .open(legacy)
                 .map_err(fail)?;
+            #[cfg(windows)]
             drop(exclusive);
             fs::remove_file(legacy).map_err(fail)?;
         }
@@ -203,14 +225,10 @@ impl Storage {
     pub fn initialize(root: &Path, import_legacy: bool) -> Result<Self, String> {
         reject_link(root)?;
         fs::create_dir_all(root).map_err(fail)?;
+        #[cfg(target_os = "macos")]
+        crate::protection::restrict_directory(root)?;
         reject_link(&root.join(format!("{SCOPE}.lock")))?;
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .share_mode(0)
-            .open(root.join(format!("{SCOPE}.lock")))
+        let lock = profile_lock(&root.join(format!("{SCOPE}.lock")))
             .map_err(|_| {
                 "This app profile is already open. Close the other copy first.".to_string()
             })?;
@@ -220,6 +238,10 @@ impl Storage {
         crate::protection::restrict_directory(&dir)?;
         let key_path = dir.join("database.key");
         reject_link(&key_path)?;
+        #[cfg(target_os = "macos")]
+        crate::protection::initialize(!key_path.exists()
+            && !dir.join("library.sqlite").exists()
+            && !dir.join("migration.sqlite").exists())?;
         let key = if key_path.exists() {
             crate::protection::unprotect(&fs::read(&key_path).map_err(fail)?)?
         } else {
@@ -334,6 +356,26 @@ pub fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn linked_storage_is_rejected_and_permissions_are_private() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = temp();
+        let target = root.join("outside");
+        fs::create_dir(&target).unwrap();
+        let linked = root.join("linked");
+        symlink(&target, &linked).unwrap();
+        assert!(Storage::initialize(&linked, false).is_err());
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        fs::remove_file(&linked).unwrap();
+        let store = Storage::initialize(&root.join("owned"), false).unwrap();
+        assert_eq!(fs::metadata(&store.dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(store.dir.join("database.key")).unwrap().permissions().mode() & 0o777, 0o600);
+        symlink(&target, store.dir.join("settings.sqlite")).unwrap();
+        assert!(store.open_profile(None).is_err());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn account_databases_are_isolated_and_old_unassigned_data_is_not_imported() {
         let root = temp();

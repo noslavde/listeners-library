@@ -293,15 +293,12 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
         w.show().map_err(|_| "Cannot show player")?;
         return Ok(());
     }
-    let profile = account_web_profile(app)?;
     let handle = app.clone();
     let page_handle = app.clone();
     let popup_handle = app.clone();
     // Both account sign-in and official playback share this local browser profile.
-    let official=WebviewWindowBuilder::new(app, "official", WebviewUrl::External(url))
+    let official=privacy::provider_view(app, WebviewWindowBuilder::new(app, "official", WebviewUrl::External(url)))?
         .title("Official Audible · remembered local session")
-        .data_directory(profile)
-        .incognito(!privacy::remember(app))
         .devtools(cfg!(debug_assertions))
         .on_new_window(move |url, _| {
             // Listen now can use window.open. Keep it in the existing profile
@@ -736,24 +733,22 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
         .0
         .lock()
         .map_err(|_| "Playback launch unavailable")? = None;
-    let profile = account_web_profile(app)?;
     if let Some(w) = app.get_webview_window("official") {
         w.destroy().map_err(|_| "Cannot stop official website before sign-out")?;
     }
     let w = {
-        if !profile.exists() {
+        #[cfg(windows)]
+        if !account_web_profile(app)?.exists() {
             return Ok(());
         }
         // Logout must clear persisted cookies even when playback is closed.
         // This function is called only by async commands: cookie reads must not
         // run inside a synchronous UI event handler on Windows.
-        WebviewWindowBuilder::new(
+        privacy::provider_view(app, WebviewWindowBuilder::new(
             app,
             "account-session-cleanup",
             WebviewUrl::External(url::Url::parse("about:blank").unwrap()),
-        )
-        .data_directory(profile)
-        .incognito(!privacy::remember(app))
+        ))?
         .visible(false)
         .devtools(false)
         .on_navigation(|_| false)
@@ -896,6 +891,8 @@ fn main() {
         ])
         .run(tauri::generate_context!())
     {
+        #[cfg(windows)]
+        {
         use windows::core::{w, PCWSTR};
         use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
         let text:Vec<u16>=format!("Listener’s Library could not start. Close other copies and retry. Do not delete the database key.\n\n{error}").encode_utf16().chain(Some(0)).collect();
@@ -907,6 +904,15 @@ fn main() {
                 MB_OK | MB_ICONERROR,
             );
         }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let message = format!("Listener’s Library could not start. Close other copies and retry. Keep your Keychain key and database.\n\n{error}");
+            let _ = std::process::Command::new("/usr/bin/osascript")
+                .args(["-e", "on run argv\ndisplay alert \"Listener’s Library — experimental macOS\" message (item 1 of argv) as critical\nend run", "--", &message])
+                .status();
+        }
+        std::process::exit(1);
     }
 }
 #[cfg(test)]

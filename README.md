@@ -6,6 +6,8 @@ A Windows audiobook companion with an always-on-top mini player, your library an
 
 ## Download and install
 
+**Mac users:** a separate [experimental macOS alpha](docs/MACOS_EXPERIMENTAL.md) is being developed on `codex/macos-experimental`. It is untested, ad-hoc signed and not the recommended beta below.
+
 1. Open [Releases](https://github.com/noslavde/listeners-library/releases). Choose the latest beta and expand **Assets**.
 2. Download **Listeners-Library-…-Windows-x64-Setup.exe**. The **Source code** ZIP/TAR files are for developers, not installation.
 3. Close all running copies of the app, then run Setup. No coding tools are required. Setup can download Microsoft's WebView2 runtime if it is missing.

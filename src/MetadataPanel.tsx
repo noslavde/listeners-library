@@ -1,3 +1,4 @@
+import { protectionName } from "./platform";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -181,7 +182,7 @@ export function MetadataPanel({
       <details>
         <summary>Account</summary>
         <p>
-          Account tokens are encrypted with Windows protection. Library data and
+          Account tokens are encrypted using {protectionName}. Library data and
           notes use an encrypted database.
         </p>
         <button

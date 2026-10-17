@@ -16,7 +16,6 @@ rand = "0.8"
 sha2 = "0.10"
 zeroize = "1"
 base64 = "0.22"
-keyring = { version = "3", features = ["windows-native"] }
 tokio = { version = "1", features = ["net", "sync", "time"] }
 tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
@@ -24,8 +23,17 @@ axum = "0.8"
 open = "5"
 
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
 webview2-com = "0.39"
 windows = { version = "0.62.2", features = ["Foundation", "Media", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_System_WinRT", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+aes-gcm = { version = "0.10.3", features = ["zeroize"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSDate"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore", "block2"] }
+block2 = "0.6"
 
 [profile.release]
 strip = true
