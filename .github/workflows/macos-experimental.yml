@@ -179,5 +179,5 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" deployment/* --verify-tag --draft --prerelease --latest=false \
-            --title "Listener's Library — macOS experimental alpha 1 (UNTESTED)" \
+            --title "Listener's Library — macOS experimental $TAG (UNTESTED)" \
             --notes-file docs/MACOS_RELEASE_NOTES.md
