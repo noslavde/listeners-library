@@ -41,6 +41,8 @@ jobs:
           cache: npm
       - name: Select Rust toolchain
         run: rustup default stable
+      - name: Verify isolated Mac release version
+        run: node scripts/check-macos-tag.mjs
       - name: Restore native build cache
         id: native-cache
         uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
@@ -48,6 +50,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
             src-tauri/target
           key: macos-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
@@ -67,8 +72,12 @@ jobs:
         run: node scripts/prepare-macos.mjs
       - name: Test native storage, account lifecycle and controls
         run: |
+          # Compile before opening the test vault; Intel cold builds can exceed
+          # a new Keychain's default idle-lock interval.
+          cargo test --no-run --release --locked --target "$LL_MAC_TARGET" --manifest-path src-tauri/Cargo.toml
           # Ephemeral runner; synthetic test records only, no user account.
           security create-keychain -p synthetic-ci-only "$RUNNER_TEMP/listeners-library-tests.keychain-db"
+          security set-keychain-settings -lut 3600 "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           security default-keychain -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           security list-keychains -d user -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           security unlock-keychain -p synthetic-ci-only "$RUNNER_TEMP/listeners-library-tests.keychain-db"
@@ -80,7 +89,7 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           fi
       - name: Build ad-hoc signed experimental disk image
-        run: npm run build:macos -- --target "$LL_MAC_TARGET" --locked
+        run: npm run build:macos -- --target "$LL_MAC_TARGET" --ci
       - name: Verify app signature and architecture
         run: |
           set -euo pipefail
@@ -96,7 +105,8 @@ jobs:
           count=$(find "src-tauri/target/$LL_MAC_TARGET/release/bundle/dmg" -name '*.dmg' | wc -l | tr -d ' ')
           test "$count" = 1
           source=$(find "src-tauri/target/$LL_MAC_TARGET/release/bundle/dmg" -name '*.dmg')
-          cp "$source" "deployment/macos/Listeners-Library-0.2.1-macOS-$ARCH-EXPERIMENTAL.dmg"
+          version=$(node -p "require('./package.json').version")
+          cp "$source" "deployment/macos/Listeners-Library-$version-macOS-$ARCH-EXPERIMENTAL.dmg"
           cp docs/MACOS_EXPERIMENTAL.md deployment/macos/READ-ME-FIRST.md
           cp LICENSE deployment/macos/LICENSE.txt
           cp src-tauri/resources/THIRD_PARTY_LICENSES.txt deployment/macos/THIRD_PARTY_LICENSES.txt
@@ -114,6 +124,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
             src-tauri/target
           key: macos-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-${{ github.sha }}
 
@@ -138,7 +151,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          test "$TAG" = "macos-v0.2.1-alpha.1"
+          node scripts/check-macos-tag.mjs
           mkdir deployment
           cp artifacts/*/*.dmg deployment/
           cp docs/MACOS_EXPERIMENTAL.md deployment/READ-ME-FIRST.md
