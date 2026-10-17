@@ -18,6 +18,6 @@ Run `node scripts/check-release-workflow.mjs` to test the actual attachment shel
 
 The build uses the lockfiles, pinned official GitHub Actions and a checksum-verified native Strawberry Perl distribution to compile bundled OpenSSL/SQLCipher. The first native build can take considerable time; subsequent builds reuse native dependency caches. No Audible credentials or signing secrets are needed for this unsigned workflow. Permissions are read-only except the release-assets job's repository write permission.
 
-Code signing and an automatic updater are not configured. No application license has been selected. Keep distribution private until release/privacy checks are complete; live account-switching and sign-out cleanup checks still require an installed-build test.
+Code signing and an automatic updater are not configured. The application source is MIT licensed. Keep this labeled as a beta; live account-switching and sign-out cleanup checks still require an installed-build test.
 
 References: [Tauri GitHub build guidance](https://v2.tauri.app/distribute/pipelines/github/), [GitHub artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts), [official Strawberry Perl download manifest](https://raw.githubusercontent.com/StrawberryPerl/strawberryperl.com/gh-pages/releases.json).

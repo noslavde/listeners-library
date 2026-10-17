@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const config=JSON.parse(await readFile('src-tauri/tauri.conf.json','utf8'));
 assert(config.bundle.active,'Installer bundling must be enabled');
 assert(config.app.windows.every(w=>w.devtools===false),'Release developer tools must be disabled');
-assert.deepEqual(config.bundle.resources,{'resources/THIRD_PARTY_LICENSES.txt':'THIRD_PARTY_LICENSES.txt'},'Only reviewed resources may be packaged');
+assert.deepEqual(config.bundle.resources,{'resources/THIRD_PARTY_LICENSES.txt':'THIRD_PARTY_LICENSES.txt','../LICENSE':'LICENSE.txt'},'Only reviewed resources may be packaged');
 const files=await readdir('dist',{recursive:true});
 assert(files.every(f=>!/(browser-test|mini-preview|\.map$|\.sqlite|\.db$|\.auth|\.env)/i.test(f)),'Development or private files in frontend bundle');
 const forbidden=['api_stream_start','api_stream_license','api_prepare_upload','api_commit_upload','browser_test_start','inspect_window','mockIPC','api_restore_previous_account'];

@@ -1,6 +1,6 @@
 {
   "name": "listeners-library",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "build:windows": "node scripts/native-build.mjs build",
     "dev:desktop": "node scripts/native-build.mjs dev",
     "check:release": "node scripts/check-release.mjs",
-    "test:native": "node scripts/native-build.mjs test"
+    "test:native": "node scripts/native-build.mjs test",
+    "format:check": "prettier --check src/main.tsx src/MetadataPanel.tsx src/NotesPanel.tsx src/noteDrafts.ts src/progress.ts src/CardProgress.tsx src/ErrorBoundary.tsx"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.0",
@@ -25,8 +26,10 @@
     "@types/node": "^22.20.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "prettier": "3.9.10",
     "typescript": "^5.9.0",
     "vite": "^7.0.0",
     "vitest": "^4.1.11"
-  }
+  },
+  "license": "MIT"
 }

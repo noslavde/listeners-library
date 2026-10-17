@@ -28,16 +28,19 @@ const mock=[
  '  esac',
  '}',
 ].join('\n');
-function run({exists,assets='',existingOnly='false'}) {
+function run({exists,assets='',existingOnly='false',notes=false}) {
  const dir=mkdtempSync(join(scratch,'release-check-'));mkdirSync(join(dir,'deployment'));
  writeFileSync(join(dir,'deployment/Example-Setup.exe'),'fresh build');
  writeFileSync(join(dir,'deployment/SHA256SUMS.txt'),'fresh checksum');
  writeFileSync(join(dir,'deployment/PRIVACY.md'),'privacy guide');
+ if(notes)writeFileSync(join(dir,'deployment/RELEASE_NOTES.md'),'Beta release notes');
  writeFileSync(join(dir,'published.exe'),'existing published installer');
  const result=spawnSync(bash,['--noprofile','--norc','-c',mock+'\n'+script],{cwd:dir,encoding:'utf8',env:{...process.env,GH_TOKEN:'synthetic-test-token',GH_REPO:'example/test',RELEASE_TAG:'release_1',EXISTING_RELEASE_ONLY:existingOnly,MOCK_EXISTS:String(exists),MOCK_ASSETS:assets}});
  return {...result,dir,calls:existsSync(join(dir,'calls.txt'))?readFileSync(join(dir,'calls.txt'),'utf8'):''};
 }
-let result=run({exists:false});
+let result=run({exists:false,notes:true});
+assert.equal(result.status,0,result.stderr);assert.match(result.calls,/create:release_1/);
+result=run({exists:false});
 assert.equal(result.status,0,result.stderr);assert.match(result.calls,/create:release_1/);
 result=run({exists:false,existingOnly:'true'});
 assert.notEqual(result.status,0);assert.equal(result.calls,'');

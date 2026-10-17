@@ -55,7 +55,7 @@ pub(crate) fn reset_player(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 pub fn player_local(w: &tauri::WebviewWindow) -> Result<(), String> {
-    if !matches!(w.label(), "main" | "mini-player") {
+    if !matches!(w.label(), "main" | "mini-player") || !w.url().is_ok_and(|u|super::local_origin(&u)) {
         return Err("Local player UI required".into());
     }
     Ok(())

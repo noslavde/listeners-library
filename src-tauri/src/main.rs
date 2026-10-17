@@ -7,6 +7,7 @@ mod launch;
 mod listening;
 mod media_keys;
 mod metadata;
+mod notes;
 mod privacy;
 mod protection;
 mod shortcuts;
@@ -36,10 +37,15 @@ fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     Ok(c)
 }
 fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
-    if window.label() != "main" {
+    if window.label() != "main" || !window.url().is_ok_and(|u| local_origin(&u)) {
         return Err("Local UI required".into());
     }
     Ok(())
+}
+pub(crate) fn local_origin(url:&url::Url)->bool{
+    let origin=matches!((url.scheme(),url.host_str(),url.port()),("tauri",Some("localhost"),None)|("http"|"https",Some("tauri.localhost"),None));
+    let dev=cfg!(debug_assertions)&&url.scheme()=="http"&&matches!(url.host_str(),Some("127.0.0.1"|"localhost"))&&url.port()==Some(1420);
+    (origin||dev)&&url.username().is_empty()&&url.password().is_none()&&matches!(url.path(),"/"|"/index.html")
 }
 #[tauri::command]
 fn inspect_window(
@@ -67,53 +73,6 @@ fn inspect_window(
         let _ = app;
         Err("Developer tools are available when running the development build".into())
     }
-}
-#[derive(Serialize, Deserialize)]
-struct Note {
-    asin: String,
-    position: f64,
-    text: String,
-}
-#[tauri::command]
-fn save_note(
-    app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
-    note: Note,
-) -> Result<(), String> {
-    local(&window)?;
-    metadata::require_account(&app)?;
-    if note.text.len() > 10000 || !note.position.is_finite() || note.position < 0.0 {
-        return Err("Invalid note".into());
-    }
-    db(&app)?
-        .execute(
-            "INSERT INTO notes VALUES(?1,?2,?3)",
-            params![note.asin, note.position, note.text],
-        )
-        .map_err(|_| "Cannot save note")?;
-    Ok(())
-}
-#[tauri::command]
-fn list_notes(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<Vec<Note>, String> {
-    local(&window)?;
-    if !metadata::connected(&app) {
-        return Ok(Vec::new());
-    }
-    let c = db(&app)?;
-    let mut q = c
-        .prepare("SELECT asin,position,text FROM notes ORDER BY rowid")
-        .map_err(|_| "Cannot read notes")?;
-    let rows = q
-        .query_map([], |r| {
-            Ok(Note {
-                asin: r.get(0)?,
-                position: r.get(1)?,
-                text: r.get(2)?,
-            })
-        })
-        .map_err(|_| "Cannot read notes")?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|_| "Cannot read notes".into())
 }
 #[tauri::command]
 fn import_library(
@@ -830,6 +789,7 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
 fn main() {
     if let Err(error) = tauri::Builder::default()
         .plugin(window_state::plugin())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let root = app.path().app_local_data_dir()?;
             privacy::apply_pending_reset(&root)?;
@@ -924,8 +884,11 @@ fn main() {
             open_player,
             player_command,
             select_chapter,
-            save_note,
-            list_notes,
+            notes::save_note,
+            notes::list_notes,
+            notes::edit_note,
+            notes::delete_note,
+            notes::export_notes,
             #[cfg(debug_assertions)]
             import_library,
             load_library
@@ -934,12 +897,12 @@ fn main() {
     {
         use windows::core::{w, PCWSTR};
         use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-        let text:Vec<u16>=format!("Audible Desktop could not start. Close other copies and retry. Do not delete the database key.\n\n{error}").encode_utf16().chain(Some(0)).collect();
+        let text:Vec<u16>=format!("Listener’s Library could not start. Close other copies and retry. Do not delete the database key.\n\n{error}").encode_utf16().chain(Some(0)).collect();
         unsafe {
             MessageBoxW(
                 None,
                 PCWSTR(text.as_ptr()),
-                w!("Audible Desktop — protected storage"),
+                w!("Listener’s Library — protected storage"),
                 MB_OK | MB_ICONERROR,
             );
         }
@@ -962,6 +925,14 @@ mod tests {
     fn restrict_asin() {
         assert!(valid_asin("B012345678"));
         assert!(!valid_asin("../evil"));
+    }
+    #[test]
+    fn local_commands_reject_provider_pages_and_lookalike_origins(){
+        for raw in ["https://www.audible.com/","https://tauri.localhost.evil.test/","https://user@tauri.localhost/","https://tauri.localhost:8443/","file:///index.html"]{
+            assert!(!local_origin(&url::Url::parse(raw).unwrap()));
+        }
+        assert!(local_origin(&url::Url::parse("http://tauri.localhost/index.html?mini=1").unwrap()));
+        assert!(local_origin(&url::Url::parse("tauri://localhost/").unwrap()));
     }
 }
 

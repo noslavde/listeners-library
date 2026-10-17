@@ -74,7 +74,14 @@ jobs:
           restore-keys: |
             windows-2022-rust-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-
       - run: npm ci
+      - name: Audit JavaScript dependencies
+        run: npm audit --audit-level=low
       - run: npm test
+      - run: npm run format:check
+      - name: Install pinned Rust audit tool
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit locked native dependencies
+        run: cargo audit --file src-tauri/Cargo.lock
       - name: Check release attachment logic
         if: github.event_name != 'release' && inputs.release_tag == '' && !startsWith(github.ref, 'refs/tags/')
         run: node scripts/check-release-workflow.mjs
@@ -102,6 +109,9 @@ jobs:
           "$hash  $filename" | Set-Content -LiteralPath deployment/SHA256SUMS.txt
           Copy-Item -LiteralPath docs/TESTER_GUIDE.md -Destination deployment/TESTER_GUIDE.md
           Copy-Item -LiteralPath docs/PRIVACY.md -Destination deployment/PRIVACY.md
+          Copy-Item -LiteralPath LICENSE -Destination deployment/LICENSE.txt
+          $notes = "docs/RELEASE_NOTES_$version.md"
+          if (Test-Path -LiteralPath $notes) { Copy-Item -LiteralPath $notes -Destination deployment/RELEASE_NOTES.md }
           Copy-Item -LiteralPath src-tauri/resources/THIRD_PARTY_LICENSES.txt -Destination deployment/THIRD_PARTY_LICENSES.txt
       - name: Upload Windows test package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -154,7 +164,12 @@ jobs:
               echo 'The requested release could not be read; no new release was created.' >&2
               exit 1
             fi
-            gh release create "$RELEASE_TAG" deployment/* --verify-tag --draft --prerelease \
-              --title "Listener's Library $RELEASE_TAG" \
-              --notes "Download the Windows x64 Setup.exe under Assets to install. Source-code archives are for developers. Unsigned test build; read TESTER_GUIDE.md and PRIVACY.md before installing."
+            if [ -f deployment/RELEASE_NOTES.md ]; then
+              gh release create "$RELEASE_TAG" deployment/* --verify-tag --draft --prerelease \
+                --title "Listener's Library $RELEASE_TAG beta" --notes-file deployment/RELEASE_NOTES.md
+            else
+              gh release create "$RELEASE_TAG" deployment/* --verify-tag --draft --prerelease \
+                --title "Listener's Library $RELEASE_TAG beta" \
+                --notes "Download the Windows x64 Setup.exe under Assets to install. Source-code archives are for developers. Unsigned beta; read TESTER_GUIDE.md and PRIVACY.md before installing."
+            fi
           fi

@@ -22,3 +22,4 @@
 .mini-compact{box-sizing:border-box}.volume-compact .volume-heading label{white-space:nowrap}
 
 .privacy-panel>button{margin:8px 8px 8px 0}.privacy-confirm{margin-top:12px;padding:16px;border:1px solid var(--accent);border-radius:8px}.privacy-confirm input{display:block;max-width:340px;margin:8px 0}.privacy-confirm button{margin-right:10px}
+.note{margin:12px 0;padding:12px}.note-text{white-space:pre-wrap;overflow-wrap:anywhere}.mini-compact .mini-timing,.mini-compact .progress-heading,.mini-compact .mini-tools button,.mini-compact .mini-notice{font-size:11px}.app-details>label{display:block;margin:12px 0}.app-details select{max-width:100%}

@@ -167,6 +167,8 @@ impl MetadataState {
             .clone();
         Ok(ConnectionStatus {
             connected: self.connected() && auth.is_some(),
+            stable_profile: auth.as_ref().is_some_and(|a|a.account_id.is_some()),
+            cleanup_required: login.phase == "cleanup-failed",
             profile: auth
                 .as_ref()
                 .filter(|_| self.connected())
@@ -218,6 +220,26 @@ pub(crate) fn require_account(app: &tauri::AppHandle) -> Result<(), String> {
     } else {
         Err("Sign in before accessing your library or playback.".into())
     }
+}
+pub(crate) fn account_generation(app:&tauri::AppHandle)->Result<u64,String>{
+    require_account(app)?;
+    Ok(app.state::<MetadataState>().generation.load(Ordering::SeqCst))
+}
+pub(crate) fn with_account_generation<T>(app:&tauri::AppHandle,generation:u64,f:impl FnOnce()->Result<T,String>)->Result<T,String>{
+    let state=app.state::<MetadataState>();
+    let _guard=state.guard_generation(generation)?;
+    f()
+}
+pub(crate) fn with_account_db<T>(app:&tauri::AppHandle,f:impl FnOnce(&rusqlite::Connection)->Result<T,String>)->Result<T,String>{
+    let generation=account_generation(app)?;
+    with_account_generation(app,generation,||{
+        let namespace=app.state::<MetadataState>().namespace.lock().map_err(|_|"Account storage unavailable")?.clone().ok_or("Sign in before accessing notes")?;
+        // Open the captured namespace directly; sign-out may revoke connected()
+        // while waiting for this lifecycle guard, but cannot switch this store.
+        let c=app.state::<crate::storage::Storage>().open_profile(Some(&namespace))?;
+        c.execute_batch("CREATE TABLE IF NOT EXISTS notes(asin TEXT NOT NULL,position REAL NOT NULL,text TEXT NOT NULL);").map_err(|_|"Cannot prepare notes")?;
+        f(&c)
+    })
 }
 fn abort_login(app: &tauri::AppHandle, message: &str) {
     let state = app.state::<MetadataState>();
@@ -842,6 +864,8 @@ pub async fn api_status(
 #[derive(Serialize)]
 pub struct ConnectionStatus {
     connected: bool,
+    stable_profile: bool,
+    cleanup_required: bool,
     profile: Option<Profile>,
     phase: &'static str,
     message: String,
@@ -992,7 +1016,7 @@ pub async fn api_disconnect(
         pending_cleanup,
     ] {
         if let Err(error) = result {
-            login_report(&app, "failed", format!("Account access stopped, but sign-out cleanup failed: {error}. Close the app and retry before sharing this Windows session."));
+            login_report(&app, "cleanup-failed", format!("Account access stopped, but sign-out cleanup failed: {error}. Choose Retry sign-out before sharing this Windows session."));
             return Err(error);
         }
     }

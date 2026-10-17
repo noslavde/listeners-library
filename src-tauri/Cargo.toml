@@ -1,6 +1,7 @@
 [package]
 name = "listeners-library"
-version = "0.2.0"
+version = "0.2.1"
+license = "MIT"
 edition = "2021"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -18,6 +19,7 @@ base64 = "0.22"
 keyring = { version = "3", features = ["windows-native"] }
 tokio = { version = "1", features = ["net", "sync", "time"] }
 tauri-plugin-window-state = "2"
+tauri-plugin-dialog = "2"
 axum = "0.8"
 open = "5"
 

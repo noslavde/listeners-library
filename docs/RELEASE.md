@@ -1,32 +1,33 @@
-# Windows private test release
+# Maintainer release checklist — 0.2.1 beta
 
-Version 0.1.1 is an unsigned, unofficial early test build for Windows 10/11 x64 and the US Audible marketplace. It requires an Audible account and internet. It uses Audible's signed-in official player for audio; it does not decrypt audio itself.
+This is a beta, not an independently audited stable release. User installation and troubleshooting instructions are in TESTER_GUIDE.md. Development history is not a user guide.
 
-## Build and share
+## Automated gates
 
-1. Run `npm ci` with the documented Windows development prerequisites.
-2. Run `npm test` and `npm run test:native`.
-3. Run `npm run build:windows`. This builds the frontend, generates dependency license notices, compiles the optimized native executable and creates a per-user NSIS installer.
-4. Share only the resulting installer from `src-tauri/target/release/bundle/nsis/` and the tester instructions. Do not share an AppData folder, WebView profile, credentials, database or a developer checkout.
+1. npm ci; npm audit --audit-level=low; npm test.
+2. cargo fetch --locked --manifest-path src-tauri/Cargo.toml.
+3. cargo audit --file src-tauri/Cargo.lock (review informational notices too).
+4. npm run build; npm run notices; npm run check:release.
+5. npm run test:native -- --release --locked.
+6. npm run build:windows; record SHA-256 of the exact setup executable.
+7. Review packaging: installer, TESTER_GUIDE.md, PRIVACY.md, THIRD_PARTY_LICENSES.txt, LICENSE and SHA256SUMS.txt. Never upload profiles, account files, keys or databases.
 
-The installer bundles the app, frontend and third-party license notices. If necessary it downloads Microsoft's WebView2 bootstrapper. Testers do not need development tools. There is no automatic updater; distribute a new installer for each test release.
+CI runs these dependency/test/build gates and creates a draft prerelease on a matching version tag. See GITHUB_RELEASES.md. Push main to validate before tagging; do not overwrite an existing released binary or move an old tag.
 
-The application identifier is deliberately preserved for existing users. Version 0.1.1 migrates old library data into encryption, requires fresh sign-in, and separates development/release stores. A new tester starts with their own account. Uninstalling is not a substitute for signing out.
+## Live gates — record passed/failed, do not infer from unit tests
 
-## Release surface
+- Clean Windows 10/11 x64 normal-user installation, with WebView2 present and missing.
+- Fresh Amazon sign-in with verification, cancel, restart, expired credentials and automatic library sync.
+- Play two owned books, including one requiring library search; show official player when automatic launch fails. Confirm audio, seeking, speed and chapters.
+- Mobile/browser resume: compare actual chapter/time; verify conflict display and explicit local/cloud resume choices.
+- Book A draft → book B → book A; ensure draft/timestamp stay with A. Save/edit/delete notes, read without playback, cancel/export JSON to a private folder and inspect synthetic output.
+- Upgrade from 0.2.0: existing notes remain. Older shared store: explicit old-note export preserves originals and never auto-merges accounts. Missing-key error preserves files.
+- Sign out during playback, library sync and note export; restart disconnected. Test A/B isolation, including shared titles, and return to A. Test cleanup failure/retry and website private mode.
+- Mini player/return/close, keyboard-only operation, media keys, sleep, 125–200% display scaling, multiple monitors and screen reader labels.
+- Export before erase; cancel destructive confirmations; confirm uninstall does not imply sign-out.
 
-Production has no developer inspection buttons or enabled WebView developer tools. Debug-only command registration excludes the abandoned direct-streaming probe, browser test server, manual progress uploads and library imports. Their research source remains available for development, but these commands are unavailable in a release build. `npm run dev:desktop` explicitly enables tools for development.
+## Distribution limits
 
-Library browsing, account sign-in, official playback, native keyboard/media keys, notes, bookmarks, local checkpoints, read-only cloud progress, themes and listening preferences remain available. The compact player expands for Chapters, Sleep or More and starts collapsed when reopened. Window position remains remembered.
+The installer is unsigned, with no automatic updater. Do not tell testers to disable Windows security. Code signing requires a suitable publisher identity/certificate or distribution service and is not solved by passing tests. Do not market this beta as security-verified. The code is MIT licensed; dependency notices and provider service/branding permissions are separate matters. Source/release visibility follows repository settings.
 
-Credentials are not part of the build: account tokens use Windows user-bound DPAPI encryption, website cookies use the user's persistent WebView profile, and library/notes/preferences use their local SQLCipher-encrypted database. Public cover images load from Amazon. No app telemetry or analytics service is included.
-
-## Before a wider public release
-
-This installer has been built successfully, but installation and playback on a second clean Windows machine still need verification. Test installation as a normal user, first sign-in and sync, two different books including one found through library search, resume from mobile, chapter selection, mini-player return, sleep, shortcuts, relaunch and sign-out. Audible page changes and account verification can affect automated opening.
-
-No signing certificate is configured. Windows may identify the publisher as unknown, and some device policies may block unsigned apps. Do not tell testers to disable Windows protections. Obtain a suitable code-signing/reputation distribution path before a general release. Review app branding, distribution rights, dependency notices and an application license before public distribution. The notices generator is attribution assistance, not a complete legal review.
-
-The installer is built with Tauri's standard NSIS tooling; tooling downloads are validated by the Tauri CLI. Record SHA-256 hashes for the exact shared binaries. A successful compilation does not prove clean-machine installation, account compatibility or cross-device progress behavior.
-
-Native builds now require native Windows Perl for the bundled OpenSSL build. Set OPENSSL_SRC_PERL to its executable if it is not on PATH. scripts/native-build.mjs also recognizes the verified portable tool under work/build-tools/strawberry/perl/bin/perl.exe; that temporary tool is not packaged or installed on testers’ machines. Git’s MSYS Perl is not sufficient.
+Keep unverified gates visible in release notes. Testers need their own account and internet, not developer tools. The older Audible Desktop product can remain separately listed; do not run it alongside or instead of the current build.
