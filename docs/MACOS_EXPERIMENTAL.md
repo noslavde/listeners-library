@@ -46,7 +46,7 @@ Cross-device resume remains governed by Audible's official player and is not gua
 
 ## Build and distribution
 
-The source branch is `codex/macos-experimental`. The separate **macOS experimental** workflow runs frontend tests, native tests including Keychain/encryption, dependency checks and ad-hoc signed DMG builds on Apple Silicon and Intel Mac hosts. It verifies signatures and records SHA-256 checksums. Workflow artifacts are available for 14 days.
+The source branch is `codex/macos-experimental`. The separate **macOS experimental** workflow runs on Mac release tags or manual requests, rather than on ordinary Windows releases. It runs frontend tests, native tests including Keychain/encryption, dependency checks and ad-hoc signed DMG builds on Apple Silicon and Intel Mac hosts. It verifies signatures and records SHA-256 checksums. Workflow artifacts are available for 14 days.
 
 The `macos-v0.2.1-alpha.1` tag creates a **draft prerelease**, never automatically published or marked latest. Windows release assets are preserved. Keep the Mac release in draft until a Mac tester completes the checklist and the Windows workflow's Mac-tag exclusion is merged to the default branch. A compile/test pass is not a playback pass.
 

@@ -2,7 +2,6 @@ name: macOS experimental
 
 on:
   push:
-    branches: [codex/macos-experimental]
     tags: ['macos-v*']
   workflow_dispatch:
 
@@ -72,7 +71,7 @@ jobs:
           security default-keychain -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           security list-keychains -d user -s "$RUNNER_TEMP/listeners-library-tests.keychain-db"
           security unlock-keychain -p synthetic-ci-only "$RUNNER_TEMP/listeners-library-tests.keychain-db"
-          cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+          cargo test --release --locked --target "$LL_MAC_TARGET" --manifest-path src-tauri/Cargo.toml
       - name: Remove synthetic test Keychain
         if: always()
         run: |
