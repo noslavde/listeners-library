@@ -10,7 +10,7 @@ export function useCurrentBook(){
  const [asin,setAsin]=useState<string|null>(null),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const alive=useRef(false),version=useRef(0);
  const load=useCallback(async()=>{const id=++version.current;const value=desktop?await invoke<string|null>('get_current_book'):localStorage.getItem('demo-current-book');if(alive.current&&id===version.current){setAsin(value);setReady(true);setError('');}},[]);
- useEffect(()=>{alive.current=true;let dead=false,stop:(()=>void)|undefined;const reload=()=>load().catch(e=>{if(!dead)setError(String(e));});if(desktop)listen('current-book-changed',reload).then(f=>{if(dead)f();else{stop=f;void reload();}}).catch(e=>{if(!dead)setError(String(e));});else void reload();return()=>{dead=true;alive.current=false;version.current++;stop?.();};},[load]);
+ useEffect(()=>{alive.current=true;let dead=false;const stops:(()=>void)[]=[];const reload=()=>load().catch(e=>{if(!dead)setError(String(e));});if(desktop){for(const event of ['current-book-changed','api-account-changed','account-signed-out'])void listen(event,()=>{version.current++;setAsin(null);void reload();}).then(f=>{if(dead)f();else stops.push(f);}).catch(()=>{});void reload();}else void reload();return()=>{dead=true;alive.current=false;version.current++;stops.forEach(f=>f());};},[load]);
  const select=async(value:string|null)=>{setBusy(true);try{if(desktop)await invoke('set_current_book',{asin:value});else if(value)localStorage.setItem('demo-current-book',value);else localStorage.removeItem('demo-current-book');await load();}finally{if(alive.current)setBusy(false);}};
  return {asin,ready,busy,error,select};
 }

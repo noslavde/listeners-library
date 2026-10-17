@@ -7,7 +7,7 @@ import {continueListening,type Activity} from './libraryView';
 import {Cover} from './Cover';
 export function useLibraryActivity(){
  const [activity,setActivity]=useState<Activity>({});
- useEffect(()=>{if(!desktop)return;let dead=false,stop:(()=>void)|undefined;const load=()=>invoke<Activity>('library_activity').then(v=>{if(!dead)setActivity(v);});load().catch(()=>{});listen('library-activity-changed',()=>{void load().catch(()=>{});}).then(f=>{if(dead)f();else stop=f;});const timer=setInterval(()=>{void load().catch(()=>{});},60000);return()=>{dead=true;stop?.();clearInterval(timer);};},[]);
+ useEffect(()=>{if(!desktop)return;let dead=false,version=0;const stops:(()=>void)[]=[];const load=()=>{const id=++version;return invoke<Activity>('library_activity').then(v=>{if(!dead&&id===version)setActivity(v);});};for(const event of ['library-activity-changed','api-account-changed','account-signed-out'])void listen(event,()=>{version++;if(event!=='library-activity-changed')setActivity({});void load().catch(()=>{});}).then(f=>{if(dead)f();else stops.push(f);});void load().catch(()=>{});const timer=setInterval(()=>{void load().catch(()=>{});},60000);return()=>{dead=true;version++;stops.forEach(f=>f());clearInterval(timer);};},[]);
  return activity;
 }
 export function ContinueShelf({books,activity,onListen,onStatus,onSetCurrent,pinBusy}:{books:Book[];activity:Activity;onListen:(book:Book)=>void;onStatus:(status:string)=>void;onSetCurrent?:(book:Book)=>void;pinBusy?:boolean}){
