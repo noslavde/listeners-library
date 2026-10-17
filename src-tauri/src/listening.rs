@@ -189,7 +189,7 @@ pub fn save(app: &tauri::AppHandle, patch: Patch) -> Result<(), String> {
         return Err("Invalid listening preference".into());
     }
     let raw = serde_json::to_string(&p).map_err(|_| "Cannot save listening settings")?;
-    super::db(app)?
+    super::settings_db(app)?
         .execute(
             "INSERT OR REPLACE INTO preferences(key,value) VALUES('listening',?1)",
             [raw],
@@ -351,7 +351,7 @@ fn official(app: &tauri::AppHandle, asin: Option<&str>) -> Option<tauri::Webview
 }
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use rusqlite::OptionalExtension;
-    let raw: Option<String> = super::db(app.handle())?
+    let raw: Option<String> = super::settings_db(app.handle())?
         .query_row(
             "SELECT value FROM preferences WHERE key='listening'",
             [],
@@ -361,7 +361,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(p) = raw.as_deref().and_then(restore_preferences) {
         let normalized = serde_json::to_string(&p)?;
         if raw.as_deref() != Some(normalized.as_str()) {
-            super::db(app.handle())?.execute(
+            super::settings_db(app.handle())?.execute(
                 "UPDATE preferences SET value=?1 WHERE key='listening'",
                 [normalized],
             )?;

@@ -1,4 +1,18 @@
-# Protected local storage (0.1.1)
+# Listener’s Library: protected local storage
+
+## Current behavior: 0.2.0
+
+The app is now Listener’s Library; its internal application identifier, Windows encryption contexts and data directory stay unchanged so an update can still unlock existing credentials and files. The app remains independent and unaffiliated with Amazon or Audible.
+
+Library metadata, notes, listening history, positions and current-book selections now use separate SQLCipher databases. New account registrations use a SHA-256 namespace derived from the Amazon customer identity in the authenticated registration response. That identity stays inside the sealed native account record. If the provider omits it, or an older credential lacks it, a separate namespace derived from that registration's refresh credential is used instead; this does not merge separate sign-ins. Different accounts never deliberately share an account database. Encryption keys, OS protection contexts and the working registration protocol are unchanged. General appearance/player preferences and website-retention choices remain local preferences shared across account connections.
+
+**Upgrade limitation:** old `library.sqlite` data was never reliably bound to an account. It remains encrypted and preserved, but is not automatically copied into any account database. The active library syncs again. Previously saved notes, local positions and listening history in that unassigned file will not appear in the new profile. Do not run an older version to access it; a future deliberate recovery flow would need to establish ownership. This avoids exposing one person's retained data to the next person signing in. Missing provider identity can also prevent continuity across separate registrations; no match is guessed from book ownership or email.
+
+Sign-out writes and flushes a nonsensitive `signed-out` marker before awaiting credential/browser cleanup. Startup refuses to restore a sealed account while the marker exists, even if deletion previously failed. A new sign-in retries website cleanup and old credential removal first; the marker is removed only after saving and decrypting the fresh account successfully. Cleanup errors are visible and must not be interpreted as a fully completed sign-out. The obsolete first-build recovery command is no longer available in the app.
+
+Website cleanup destroys the live official page, uses a blank isolated cleanup view, waits for WebView2's full browsing-data deletion callback and verifies cookie removal before closing the view. It clears runtime-managed site storage as well as cookies; it cannot erase backups or guarantee forensic erasure. A timeout/failure keeps the signed-out marker. No Amazon credentials or real website profiles are used by automated tests.
+
+Sections below describe the original protections and historical migration behavior; the 0.2.0 behavior above supersedes the former shared-account cache and recovery UI.
 
 The library, notes, listening history, saved positions, launch hints and preferences use SQLCipher with its default authenticated encrypted-page format and a random 256-bit key. SQLCipher's crypto provider is statically bundled OpenSSL. There is no plaintext fallback. Temporary SQLite data uses memory, and normal journals are encrypted by SQLCipher. The database key is protected with Windows DPAPI in current-user scope, without CRYPTPROTECT_LOCAL_MACHINE. The key is never embedded in the executable or returned to React.
 

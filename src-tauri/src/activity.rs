@@ -40,14 +40,17 @@ fn credit(previous: &Sample, current: &super::PlayerState, now: Instant) -> f64 
     elapsed.min(advanced / previous.speed)
 }
 fn persist(app: &tauri::AppHandle, p: Pending) {
+    // Pin the originating database before handing work to another thread.
+    let Ok(c) = super::db(app) else { return; };
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if let Ok(c) = super::db(&app) {
             if write_activity(&c, &p).is_ok() {
                 let _ = app.emit_to("main", "library-activity-changed", ());
             }
-        }
     });
+}
+pub fn reset(app: &tauri::AppHandle) {
+    if let Ok(mut tracker) = app.state::<Activity>().0.lock() { *tracker = (None, None); }
 }
 fn write_activity(c: &rusqlite::Connection, p: &Pending) -> rusqlite::Result<usize> {
     c.execute("INSERT INTO listening_activity(asin,listened_seconds,last_listened,position,duration,hidden) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(asin) DO UPDATE SET listened_seconds=listened_seconds+excluded.listened_seconds,position=CASE WHEN excluded.last_listened>=last_listened THEN excluded.position ELSE position END,duration=excluded.duration,last_listened=MAX(last_listened,excluded.last_listened)",rusqlite::params![p.asin,p.seconds,p.last_listened,p.position,p.duration])

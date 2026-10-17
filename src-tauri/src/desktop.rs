@@ -26,6 +26,7 @@ impl PlayerHub {
     }
 }
 pub(crate) fn reset_player(app: &tauri::AppHandle) -> Result<(), String> {
+    super::activity::reset(app);
     super::listening::cancel_sleep(app);
     app.state::<super::start_playback::StartPlayback>().cancel();
     if let Some(w) = app.get_webview_window("official") {

@@ -1,6 +1,6 @@
 [package]
-name = "audible-desktop"
-version = "0.1.10"
+name = "listeners-library"
+version = "0.2.0"
 edition = "2021"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

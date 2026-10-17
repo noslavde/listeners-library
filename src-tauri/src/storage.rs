@@ -253,10 +253,40 @@ impl Storage {
     pub(crate) fn load_account_bytes(&self) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
         load_account_blob(&self.dir)
     }
+    pub(crate) fn load_restorable_account(&self) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
+        if self.restore_blocked() { Ok(None) } else { self.load_account_bytes() }
+    }
     pub fn open(&self) -> Result<Connection, String> {
         reject_link(&self.dir)?;
         reject_link(&self.dir.join("library.sqlite"))?;
         connect(&self.dir.join("library.sqlite"), &self.key)
+    }
+    pub fn open_profile(&self, namespace: Option<&str>) -> Result<Connection, String> {
+        let name = match namespace {
+            Some(key) if key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit()) => format!("account-{key}.sqlite"),
+            Some(_) => return Err("Invalid account storage context".into()),
+            None => "settings.sqlite".into(),
+        };
+        reject_link(&self.dir)?;
+        let path = self.dir.join(name);
+        reject_link(&path)?;
+        connect(&path, &self.key)
+    }
+    pub fn block_account_restore(&self) -> Result<(), String> {
+        let path = self.dir.join("signed-out");
+        reject_link(&path)?;
+        if !path.exists() { write_new(&path, b"1")?; }
+        Ok(())
+    }
+    pub fn restore_blocked(&self) -> bool {
+        // Any metadata error other than absence must fail closed.
+        !matches!(fs::symlink_metadata(self.dir.join("signed-out")), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+    }
+    pub fn allow_account_restore(&self) -> Result<(), String> {
+        let path = self.dir.join("signed-out");
+        reject_link(&path)?;
+        if path.exists() { fs::remove_file(path).map_err(fail)?; }
+        Ok(())
     }
 }
 pub fn save_account(app: &tauri::AppHandle, raw: &[u8]) -> Result<(), String> {
@@ -304,6 +334,49 @@ pub fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn account_databases_are_isolated_and_old_unassigned_data_is_not_imported() {
+        let root = temp();
+        let store = Storage::initialize(&root, false).unwrap();
+        let a = "a".repeat(64); let b = "b".repeat(64);
+        let legacy = store.open().unwrap();
+        legacy.execute_batch("CREATE TABLE notes(text TEXT); INSERT INTO notes VALUES('unassigned legacy note');").unwrap();
+        drop(legacy);
+        for (key, note) in [(&a, "account A note"), (&b, "account B note")] {
+            let c = store.open_profile(Some(key)).unwrap();
+            c.execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
+            c.execute("INSERT INTO notes VALUES(?1)", [note]).unwrap();
+        }
+        // Returning to A preserves A's data, without B's or the legacy database.
+        let c = store.open_profile(Some(&a)).unwrap();
+        assert_eq!(c.query_row("SELECT group_concat(text) FROM notes", [], |r| r.get::<_,String>(0)).unwrap(), "account A note");
+        drop(c);
+        assert!(store.open_profile(Some("../library")).is_err());
+        let bytes = fs::read(store.dir.join(format!("account-{a}.sqlite"))).unwrap();
+        assert!(!bytes.windows(14).any(|b| b == b"account A note"));
+        drop(store);
+        let store = Storage::initialize(&root, false).unwrap();
+        assert_eq!(store.open_profile(Some(&b)).unwrap().query_row("SELECT text FROM notes", [], |r| r.get::<_,String>(0)).unwrap(), "account B note");
+        drop(store); fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn signed_out_marker_blocks_leftover_credentials_across_restart_until_fresh_save() {
+        let root = temp();
+        let store = Storage::initialize(&root, false).unwrap();
+        store.save_account_bytes(b"synthetic old credential").unwrap();
+        store.block_account_restore().unwrap();
+        // Simulate credential deletion failing: leave the sealed file in place.
+        assert!(store.dir.join("account.sealed").exists());
+        drop(store);
+        let store = Storage::initialize(&root, false).unwrap();
+        assert!(store.load_restorable_account().unwrap().is_none());
+        store.save_account_bytes(b"synthetic fresh sign-in").unwrap();
+        assert!(store.load_restorable_account().unwrap().is_none());
+        assert_eq!(store.load_account_bytes().unwrap().unwrap().as_slice(), b"synthetic fresh sign-in");
+        store.allow_account_restore().unwrap();
+        assert_eq!(store.load_restorable_account().unwrap().unwrap().as_slice(), b"synthetic fresh sign-in");
+        drop(store); fs::remove_dir_all(root).unwrap();
+    }
     fn temp() -> PathBuf {
         let p =
             std::env::temp_dir().join(format!("audible-storage-test-{}", rand::random::<u64>()));

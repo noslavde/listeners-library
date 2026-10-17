@@ -19,69 +19,6 @@ fn decode_previous(raw: &str) -> Result<Auth, String> {
     Ok(auth)
 }
 
-#[tauri::command]
-pub async fn api_restore_previous_account(
-    app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
-) -> Result<(), String> {
-    super::super::local(&window)?;
-    if cfg!(debug_assertions) {
-        return Err("Previous-account recovery is available in the installed app only. Development accounts remain separate.".into());
-    }
-    if app.get_webview_window("metadata-login").is_some() {
-        return Err("Finish or close the sign-in window before restoring an account.".into());
-    }
-    let state = app.state::<MetadataState>();
-    if state.auth.lock().await.is_some() {
-        return Err(
-            "An account is already connected. Sign out before restoring another account.".into(),
-        );
-    }
-    let generation;
-    {
-        let pending = state
-            .pending
-            .lock()
-            .map_err(|_| "Login state unavailable")?;
-        let mut status = state.login.lock().map_err(|_| "Login state unavailable")?;
-        if pending.is_some() || matches!(status.phase, "restoring" | "registering" | "saving") {
-            return Err("Finish the current account connection first.".into());
-        }
-        generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        status.phase = "restoring";
-    }
-    login_report(
-        &app,
-        "restoring",
-        "Restoring the first build’s saved account on this PC…",
-    );
-    let outcome = async {
-        let entry = keyring::Entry::new("AudibleDesktop.Metadata.US", "default")
-            .map_err(|_| "Windows credential storage is unavailable.")?;
-        let raw = zeroize::Zeroizing::new(entry.get_password().map_err(|error| match error {
-            keyring::Error::NoEntry => "No account saved by the first build was found for this Windows user. Try Sign in instead.",
-            _ => "Windows could not unlock the previous account. The saved record has been kept unchanged.",
-        })?);
-        let auth = decode_previous(&raw)?;
-        drop(raw);
-        // No network exchange or credential import into the UI. Expired access
-        // tokens follow the original refresh flow when Sync library is chosen.
-        state.finish_registration(generation, auth, |auth| save_verified(&app, auth)).await
-    }.await;
-    if state.generation.load(Ordering::SeqCst) != generation {
-        return Err("Account restore canceled.".into());
-    }
-    match &outcome {
-        Ok(()) => login_report(
-            &app,
-            "connected",
-            "Previous account restored and encrypted.",
-        ),
-        Err(error) => login_report(&app, "failed", error.clone()),
-    }
-    outcome
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

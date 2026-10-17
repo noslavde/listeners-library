@@ -1,4 +1,6 @@
-# Audible Desktop
+# Listener’s Library
+
+> **0.2.0 security update:** account libraries are separated. Old unassigned notes and history remain encrypted in the previous database and are not automatically assigned to a new sign-in. The obsolete first-build recovery action has been removed. Read [current privacy behavior](docs/PRIVACY.md).
 
 A Windows Tauri 2 / React / TypeScript app with a Rust backend and local SQLite library and notes. Audible's official player handles protected audio in a signed-in WebView; the app supplies library browsing, series navigation and an always-on-top mini player. Unaffiliated with Audible.
 
@@ -39,7 +41,7 @@ The main screen focuses on account connection, books and series. Timestamped not
 
 ## Privacy and progress
 
-Credentials are entered only on official Amazon/Audible pages. API tokens stay in the native backend and are stored with Windows user-bound encryption; website sign-in uses a separate WebView2 profile. No account credentials are embedded in code or returned to the frontend. Library metadata, notes, history, settings and playback checkpoints use SQLCipher encryption with a random Windows-protected key. **Sign out** removes this app's remembered API credentials and website cookies while retaining cached books and notes. Development and installed versions now have separate accounts and protected stores. The app remains single-account within each store. See Privacy & local storage for private website sessions and typed-confirmation local data removal.
+Credentials are entered only on official Amazon/Audible pages. API tokens stay in the native backend and are stored with Windows user-bound encryption; website sign-in uses a separate WebView2 profile. No account credentials are embedded in code or returned to the frontend. Library metadata, notes, history, settings and playback checkpoints use SQLCipher encryption with a random Windows-protected key. **Sign out** removes this app's remembered API credentials and website cookies while retaining cached books and notes. Development and installed versions now have separate accounts and protected stores. Account libraries now use separate encrypted profiles; see the 0.2.0 privacy notes. See Privacy & local storage for private website sessions and typed-confirmation local data removal.
 
 Official playback supplies its own cloud resume behavior. Read-only cloud-position lookup and local checkpoints are also available. Automatic position uploads are off; cross-device synchronization still needs live verification. See [privacy](docs/PRIVACY.md), [position sync](docs/POSITION_SYNC_TEST.md) and [architecture](docs/ARCHITECTURE.md).
 
@@ -101,7 +103,7 @@ This connects API library access. Browser cookies are separate from the embedded
 
 External-browser reference: https://audible.readthedocs.io/en/stable/auth/authorization.html
 
-## First installer account recovery 0.1.6
+## Historical first installer account recovery 0.1.6 (removed in 0.2.0)
 
 The user confirmed that 0.1.0 opened already connected; fresh sign-in in that build has not been established. The actual first installer checkpoint is `e21c0ea492beea3cef2d58cc85ec378d11f456dc`, with NSIS bundling enabled. Its fresh-sign-in path used the Android registration profile and shared official-player WebView profile. The previous 0.1.3 rollback incorrectly used an earlier iOS prototype checkpoint.
 
@@ -117,7 +119,7 @@ The live 0.1.6 diagnostic confirms an HTTP 400 at Amazon account registration, b
 
 ## Duplicate registration name fix 0.1.8
 
-The live 0.1.7 result identifies Amazon’s rejection as `DuplicateDeviceName`. Every registration previously sent the same literal `Audible Desktop Lab`. New registrations now use `Audible Desktop` plus a 128-bit hexadecimal suffix derived from the attempt’s existing random device serial. The name is stable within an attempt and changes with a new serial; it contains no username, hostname or account information. Both profiles use this fix. The serial, PKCE, API profile, registration token request and encrypted storage stay unchanged. No devices are deleted or deregistered, and the app does not retry a consumed authorization code. Install the update and start a fresh Sign in.
+The live 0.1.7 result identifies Amazon’s rejection as `DuplicateDeviceName`. Every registration previously sent the same literal `Listener’s Library Lab`. New registrations now use `Listener’s Library` plus a 128-bit hexadecimal suffix derived from the attempt’s existing random device serial. The name is stable within an attempt and changes with a new serial; it contains no username, hostname or account information. Both profiles use this fix. The serial, PKCE, API profile, registration token request and encrypted storage stay unchanged. No devices are deleted or deregistered, and the app does not retry a consumed authorization code. Install the update and start a fresh Sign in.
 
 Tests cover distinct names across synthetic serials, stable repeated construction for one attempt and unchanged original registration fields other than the name. The reported cause is confirmed by the live server error; successful fresh sign-in after the fix still needs a live test.
 
@@ -125,7 +127,7 @@ Tests cover distinct names across synthetic serials, stable repeated constructio
 
 A connected account now automatically syncs its library after sign-in or explicit account restore and when opening with a remembered account. Each connection starts one refresh; repeated focus/status events do not queue duplicate requests. The button shows Syncing while work runs. Failures retain cached books, show a persistent retry message and leave manual Sync library available. Stale results after disconnect/unmount are ignored. Startup cache loading cannot overwrite a newer sync result. Account registration and encryption remain unchanged.
 
-## Sign-out access boundary 0.1.10
+## Historical sign-out access boundary 0.1.10
 
 Sign-out now revokes the current account generation before waiting for API requests or browser-cookie cleanup, clears the player hub/current-book selection and visible library/series/notes/player state, cancels playback handoff/sleep, pauses media, closes the mini player and destroys the official player after cookie cleanup. Media keys and player/library entry points require an active account. Cached library, notes, current selection, history and saved-position readers return empty results while signed out; encrypted saved notes and other retained caches are not deleted. On restart without account tokens, those caches stay hidden. Returning connection state invalidates stale cached loads and in-flight UI sync results. API library sync also checks its generation before committing.
 

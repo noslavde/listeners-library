@@ -17,6 +17,24 @@ fn response() -> Value {
     json!({"response":{"success":{"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM"}},"tokens":{"bearer":{"access_token":"synthetic-access-only","refresh_token":"synthetic-refresh-only","expires_in":"3600.0"}}}}})
 }
 #[test]
+fn account_namespaces_follow_provider_identity_without_exposing_it() {
+    let mut a = response();
+    a["response"]["success"]["extensions"]["customer_info"] = json!({"user_id":"synthetic-account-A"});
+    let first = registration_auth(&a, Profile::Ios).unwrap().namespace();
+    a["response"]["success"]["tokens"]["bearer"]["refresh_token"] = json!("different-registration");
+    assert_eq!(registration_auth(&a, Profile::Ios).unwrap().namespace(), first);
+    a["response"]["success"]["extensions"]["customer_info"]["user_id"] = json!("synthetic-account-B");
+    assert_ne!(registration_auth(&a, Profile::Ios).unwrap().namespace(), first);
+    assert_eq!(first.len(), 64);
+    assert!(!first.contains("synthetic"));
+    let old = registration_auth(&response(), Profile::Ios).unwrap();
+    assert_ne!(old.namespace(), first);
+    let state = MetadataState::with_auth(Some(old));
+    assert!(state.guard_generation(0).is_ok());
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    assert!(state.guard_generation(0).is_err());
+}
+#[test]
 fn token_lifetime_accepts_provider_numeric_formats_and_rejects_invalid_values() {
     for value in [
         json!(3600),
@@ -77,7 +95,7 @@ fn a_registration_finishing_after_signout_cannot_reopen_account_access() {
                 Ok(())
             })
             .await
-            .unwrap();
+            .unwrap_err();
         assert!(!state.connected());
         assert!(!state.connection().await.unwrap().connected);
     });
@@ -255,7 +273,7 @@ fn packaged_first_build_android_contract_changes_only_duplicate_device_name() {
     assert!(body["registration_data"]["device_name"]
         .as_str()
         .unwrap()
-        .starts_with("Audible Desktop "));
+        .starts_with("Listeners Library "));
     assert_ne!(
         body["registration_data"]["device_name"],
         "Audible Desktop Lab"
@@ -294,9 +312,9 @@ fn registrations_have_distinct_names_that_stay_stable_within_an_attempt() {
             assert_eq!(registration["device_serial"], serial);
             assert_eq!(registration["device_type"], profile.device_type());
             assert_eq!(registration, profile.registration(&serial));
-            assert_eq!(name.len(), "Audible Desktop ".len() + 32);
+            assert_eq!(name.len(), "Listeners Library ".len() + 32);
             assert!(name
-                .strip_prefix("Audible Desktop ")
+                .strip_prefix("Listeners Library ")
                 .unwrap()
                 .bytes()
                 .all(|b| b.is_ascii_hexdigit()));

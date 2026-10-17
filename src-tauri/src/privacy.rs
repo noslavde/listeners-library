@@ -13,7 +13,9 @@ pub fn remember(app: &tauri::AppHandle) -> bool {
 }
 pub fn setup(app: &mut tauri::App) -> Result<(), String> {
     use rusqlite::OptionalExtension;
-    let value: Option<String> = super::db(app.handle())?
+    let db = app.state::<crate::storage::Storage>().open()?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);").map_err(|_| "Cannot initialize privacy preference")?;
+    let value: Option<String> = db
         .query_row(
             "SELECT value FROM preferences WHERE key='remember_website'",
             [],
@@ -65,7 +67,7 @@ pub async fn set_website_privacy(
             .map_err(|_| "Close the sign-in window and retry")?;
     }
     super::clear_official_session(&app)?;
-    super::db(&app)?
+    app.state::<crate::storage::Storage>().open()?
         .execute(
             "INSERT OR REPLACE INTO preferences(key,value) VALUES('remember_website',?1)",
             [if remember_website { "true" } else { "false" }],
@@ -231,4 +233,26 @@ pub fn harden_view(window: &tauri::WebviewWindow) -> Result<(), String> {
   }Ok(())})();
   if outcome.is_err(){let _=owner.app_handle().emit_to("main","player-error","Cannot apply website privacy settings; update Microsoft WebView2 and retry.");let _=owner.close();}
  }).map_err(|_|"Cannot apply website privacy settings".into())
+}
+
+/// Wait for the actual platform completion, not merely submission of deletion.
+/// Called on async command workers, never in the Windows UI event handler.
+pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::core::Interface;
+    use webview2_com::{ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2_13, ICoreWebView2Profile2}};
+    let (tx, rx) = std::sync::mpsc::channel();
+    window.with_webview(move |view| {
+        let failed = tx.clone();
+        let submitted = (|| -> windows::core::Result<()> { unsafe {
+            view.controller().CoreWebView2()?.cast::<ICoreWebView2_13>()?.Profile()?.cast::<ICoreWebView2Profile2>()?
+                .ClearBrowsingDataAll(&ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
+                    let _ = tx.send(result.is_ok()); Ok(())
+                })))?;
+        } Ok(()) })();
+        if submitted.is_err() { let _ = failed.send(false); }
+    }).map_err(|_| "Cannot start website data cleanup")?;
+    match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+        Ok(true) => Ok(()),
+        _ => Err("Website data cleanup did not complete; retry sign-out before signing in again".into()),
+    }
 }

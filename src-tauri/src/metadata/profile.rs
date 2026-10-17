@@ -61,7 +61,7 @@ impl Profile {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        let device_name = format!("Audible Desktop {suffix}");
+        let device_name = format!("Listeners Library {suffix}");
         json!({"domain":domain,"app_version":version,"device_type":self.device_type(),"device_name":device_name,"os_version":os,"device_serial":serial,"device_model":model,"app_name":name,"software_version":software})
     }
 }

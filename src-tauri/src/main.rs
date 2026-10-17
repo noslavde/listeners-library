@@ -18,8 +18,15 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 struct OfficialLaunch(std::sync::Mutex<Option<String>>);
 
-fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
+fn settings_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let c = app.state::<storage::Storage>().open()?;
+    c.execute_batch("CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);").map_err(|_| "Settings database setup failed")?;
+    Ok(c)
+}
+
+fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let namespace = metadata::account_namespace(app)?;
+    let c = app.state::<storage::Storage>().open_profile(namespace.as_deref())?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS listening_activity(asin TEXT PRIMARY KEY,listened_seconds REAL NOT NULL,last_listened INTEGER NOT NULL,position REAL NOT NULL,duration REAL NOT NULL,hidden INTEGER NOT NULL DEFAULT 0);").map_err(|_| "Listening history setup failed")?;
     c.execute_batch(
         "CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
@@ -771,9 +778,10 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
         .lock()
         .map_err(|_| "Playback launch unavailable")? = None;
     let profile = account_web_profile(app)?;
-    let w = if let Some(w) = app.get_webview_window("official") {
-        w
-    } else {
+    if let Some(w) = app.get_webview_window("official") {
+        w.destroy().map_err(|_| "Cannot stop official website before sign-out")?;
+    }
+    let w = {
         if !profile.exists() {
             return Ok(());
         }
@@ -795,6 +803,7 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
         .map_err(|_| "Cannot open local session for sign-out")?
     };
     let outcome = (|| -> Result<(), String> {
+        privacy::clear_browser_data(&w)?;
         for cookie in w
             .cookies()
             .map_err(|_| "Cannot read local session for sign-out")?
@@ -865,7 +874,6 @@ fn main() {
             #[cfg(debug_assertions)]
             inspect_window,
             metadata::api_login,
-            metadata::account_restore::api_restore_previous_account,
             metadata::api_status,
             metadata::api_connection,
             #[cfg(debug_assertions)]

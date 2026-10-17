@@ -1,6 +1,7 @@
 //! US account/metadata API and explicit streaming-grant feasibility probe.
 //! No audio download, key extraction, imported CDM or DRM decryption.
-pub mod account_restore;
+#[cfg(test)]
+mod account_restore;
 pub mod browser_test;
 mod profile;
 pub mod stream;
@@ -25,6 +26,8 @@ use std::{
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use upload::PreparedUpload;
 pub struct MetadataState {
+    durability: Mutex<()>,
+    namespace: Mutex<Option<String>>,
     connected_generation: AtomicU64,
     pending: Mutex<Option<Pending>>,
     generation: AtomicU64,
@@ -43,6 +46,8 @@ struct Pending {
 #[derive(Serialize, Deserialize)]
 struct Auth {
     #[serde(default)]
+    account_id: Option<String>,
+    #[serde(default)]
     profile: Profile,
     access: String,
     refresh: String,
@@ -55,9 +60,26 @@ impl Drop for Auth {
         self.refresh.zeroize();
     }
 }
+impl Auth {
+    fn namespace(&self) -> String {
+        let mut hash = Sha256::new();
+        hash.update(b"listeners-library:us:v1:");
+        if let Some(id) = self.account_id.as_deref() {
+            hash.update(b"account:"); hash.update(id.as_bytes());
+        } else {
+            // Legacy credentials have no verified identity. Never attach a shared
+            // database to them or guess identity from overlapping book ownership.
+            hash.update(b"legacy-registration:"); hash.update(self.refresh.as_bytes());
+        }
+        format!("{:x}", hash.finalize())
+    }
+}
 impl MetadataState {
     pub fn new(app: &tauri::AppHandle) -> Self {
-        let loaded = crate::storage::load_account(app).and_then(|raw| {
+        if app.state::<crate::storage::Storage>().restore_blocked() {
+            return Self::with_auth(None);
+        }
+        let loaded = app.state::<crate::storage::Storage>().load_restorable_account().and_then(|raw| {
             raw.map(|raw| {
                 serde_json::from_slice(&raw)
                     .map_err(|_| "Saved account format could not be read".to_owned())
@@ -80,6 +102,8 @@ impl MetadataState {
     fn with_auth(auth: Option<Auth>) -> Self {
         let phase = if auth.is_some() { "connected" } else { "idle" };
         Self {
+            durability: Mutex::new(()),
+            namespace: Mutex::new(auth.as_ref().map(Auth::namespace)),
             connected_generation: AtomicU64::new(if auth.is_some() { 1 } else { 0 }),
             login: Mutex::new(LoginStatus {
                 phase,
@@ -109,10 +133,15 @@ impl MetadataState {
         persist: impl FnOnce(&Auth) -> Result<(), String>,
     ) -> Result<(), String> {
         let mut stored = self.auth.lock().await;
+        let _durability = self.durability.lock().map_err(|_| "Account storage unavailable")?;
         if self.generation.load(Ordering::SeqCst) != generation {
             return Err("API sign-in canceled".into());
         }
         persist(&auth)?;
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return Err("API sign-in canceled".into());
+        }
+        *self.namespace.lock().map_err(|_| "Account storage unavailable")? = Some(auth.namespace());
         *stored = Some(auth);
         self.connected_generation
             .store(generation + 1, Ordering::SeqCst);
@@ -121,6 +150,13 @@ impl MetadataState {
     fn connected(&self) -> bool {
         self.connected_generation.load(Ordering::SeqCst)
             == self.generation.load(Ordering::SeqCst) + 1
+    }
+    fn guard_generation(&self, generation: u64) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+        let guard = self.durability.lock().map_err(|_| "Account storage unavailable")?;
+        if !self.connected() || self.generation.load(Ordering::SeqCst) != generation {
+            return Err("Account changed; operation canceled".into());
+        }
+        Ok(guard)
     }
     async fn connection(&self) -> Result<ConnectionStatus, String> {
         let auth = self.auth.lock().await;
@@ -171,6 +207,11 @@ pub(crate) fn connected(app: &tauri::AppHandle) -> bool {
     app.try_state::<MetadataState>()
         .is_some_and(|state| state.connected())
 }
+pub(crate) fn account_namespace(app: &tauri::AppHandle) -> Result<Option<String>, String> {
+    let Some(state) = app.try_state::<MetadataState>() else { return Ok(None); };
+    let namespace = state.namespace.lock().map_err(|_| "Account storage unavailable")?;
+    Ok(if state.connected() { namespace.clone() } else { None })
+}
 pub(crate) fn require_account(app: &tauri::AppHandle) -> Result<(), String> {
     if connected(app) {
         Ok(())
@@ -211,11 +252,18 @@ fn save_verified(app: &tauri::AppHandle, auth: &Auth) -> Result<(), String> {
     if restored.access != auth.access
         || restored.refresh != auth.refresh
         || restored.profile != auth.profile
+        || restored.account_id != auth.account_id
     {
         return Err("Protected account verification failed".into());
     }
     app.state::<MetadataState>()
         .trace("protected account: saved and read back".into());
+    app.state::<MetadataState>().trace(if auth.account_id.is_some() {
+        "account storage: provider identity available"
+    } else {
+        "account storage: isolated registration (provider identity unavailable)"
+    }.into());
+    app.state::<crate::storage::Storage>().allow_account_restore()?;
     Ok(())
 }
 fn random(n: usize) -> Vec<u8> {
@@ -360,6 +408,10 @@ pub async fn api_login(
     profile: Option<Profile>,
 ) -> Result<(), String> {
     super::local(&window)?;
+    if app.state::<crate::storage::Storage>().restore_blocked() {
+        crate::clear_official_session(&app)?;
+        crate::storage::forget_account(&app)?;
+    }
     if app.get_webview_window("metadata-login").is_some() {
         return Err("Finish or close the existing API sign-in window".into());
     }
@@ -666,6 +718,8 @@ fn registration_auth(value: &Value, profile: Profile) -> Result<Auth, String> {
         .pointer("/response/success/tokens/bearer")
         .ok_or("Amazon did not return account tokens; sign-in was not saved")?;
     Ok(Auth {
+        account_id: value.pointer("/response/success/extensions/customer_info/user_id")
+            .and_then(Value::as_str).filter(|id| !id.is_empty() && id.len() <= 512).map(str::to_owned),
         profile,
         access: field(bearer, "access_token")?,
         refresh: field(bearer, "refresh_token")?,
@@ -747,7 +801,11 @@ async fn get_page(
 ) -> Result<(Value, Option<String>), String> {
     require_account(app)?;
     let state = app.state::<MetadataState>();
+    let generation = state.generation.load(Ordering::SeqCst);
     let mut guard = state.auth.lock().await;
+    if !state.connected() || state.generation.load(Ordering::SeqCst) != generation {
+        return Err("Account changed; request canceled".into());
+    }
     let a = guard.as_mut().ok_or("Connect library API first")?;
     let client = http()?;
     let token = fresh_token(&app, a, &client).await?;
@@ -764,7 +822,11 @@ async fn get_page(
         .and_then(|v| v.to_str().ok())
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
-    Ok((decode(response).await?, continuation))
+    let value = decode(response).await?;
+    if !state.connected() || state.generation.load(Ordering::SeqCst) != generation {
+        return Err("Account changed; response discarded".into());
+    }
+    Ok((value, continuation))
 }
 async fn get(app: &tauri::AppHandle, path: &str, query: &[(&str, &str)]) -> Result<Value, String> {
     Ok(get_page(app, path, query).await?.0)
@@ -879,6 +941,11 @@ pub async fn api_disconnect(
     app.state::<MetadataState>()
         .generation
         .fetch_add(1, Ordering::SeqCst);
+    let durable_cleanup = {
+        let state = app.state::<MetadataState>();
+        let _guard = state.durability.lock().map_err(|_| "Account storage unavailable")?;
+        app.state::<crate::storage::Storage>().block_account_restore()
+    };
     let _ = app.emit("account-signed-out", ());
     login_report(&app, "signing-out", "Signing out and stopping playback…");
     let playback_cleanup = crate::desktop::reset_player(&app);
@@ -916,6 +983,7 @@ pub async fn api_disconnect(
     stream::invalidate(&app);
     let website_cleanup = crate::clear_official_session(&app);
     for result in [
+        durable_cleanup,
         token_cleanup,
         legacy_cleanup,
         website_cleanup,
@@ -990,7 +1058,9 @@ pub async fn api_sync(
                     return Err("Account changed; library sync was canceled.".into());
                 }
                 let raw = serde_json::to_string(&items).map_err(|_| "Cannot encode library")?;
-                return super::cache_library(app, window, raw, true);
+                let state = app.state::<MetadataState>();
+                let _guard = state.guard_generation(generation)?;
+                return super::cache_library(app.clone(), window, raw, true);
             }
         }
     }
@@ -1023,6 +1093,8 @@ pub async fn api_refresh_card_positions(
     window: tauri::WebviewWindow,
 ) -> Result<CardPositionRefresh, String> {
     super::local(&window)?;
+    let state = app.state::<MetadataState>();
+    let generation = state.generation.load(Ordering::SeqCst);
     if app.state::<MetadataState>().auth.lock().await.is_none() {
         return Err("Connect library API to refresh Audible positions".into());
     }
@@ -1045,6 +1117,7 @@ pub async fn api_refresh_card_positions(
         let query = chunk.join(",");
         match get(&app, "/1.0/annotations/lastpositions", &[("asins", &query)]).await {
             Ok(v) => {
+                let _guard = state.guard_generation(generation)?;
                 for asin in chunk {
                     if let Some(position) = annotation_position(&v, asin) {
                         save_cloud_position(&app, asin, position)?;
@@ -1205,6 +1278,8 @@ pub async fn api_position(
     asin: String,
 ) -> Result<CloudMetadata, String> {
     super::local(&window)?;
+    let state = app.state::<MetadataState>();
+    let generation = state.generation.load(Ordering::SeqCst);
     if !super::valid_asin(&asin) {
         return Err("Invalid ASIN".into());
     }
@@ -1259,6 +1334,7 @@ pub async fn api_position(
             .warnings
             .push("Audible returned no usable chapter offsets for this title".into());
     }
+    let _guard = state.guard_generation(generation)?;
     if !result.chapters.is_empty() {
         if let Err(e) = cache_details(&app, &asin, &result) {
             result.warnings.push(e)
@@ -1324,6 +1400,7 @@ mod tests {
         .unwrap();
         assert_eq!(auth.profile, Profile::Ios);
         let android = Auth {
+            account_id: auth.account_id.clone(),
             profile: Profile::Android,
             access: auth.access.clone(),
             refresh: auth.refresh.clone(),
