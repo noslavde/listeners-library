@@ -45,34 +45,43 @@ fn validate(asin: &str, position: f64, text: &str) -> Result<(), String> {
 // command must never open the next account's DB using a previous account's note.
 fn with_db<T>(
     app: &tauri::AppHandle,
+    generation: u64,
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
-    super::metadata::with_account_db(app, f)
+    super::metadata::with_account_db(app, generation, f)
+}
+
+#[tauri::command]
+pub fn notes_session(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<u64, String> {
+    super::local(&window)?;
+    super::metadata::account_generation(&app)
 }
 
 #[tauri::command]
 pub fn list_notes(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    generation: u64,
 ) -> Result<Vec<Note>, String> {
     super::local(&window)?;
     if !super::metadata::connected(&app) {
         return Ok(Vec::new());
     }
-    with_db(&app, read)
+    with_db(&app, generation, read)
 }
 
 #[tauri::command]
 pub fn save_note(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    generation: u64,
     asin: String,
     position: f64,
     text: String,
 ) -> Result<(), String> {
     super::local(&window)?;
     validate(&asin, position, &text)?;
-    with_db(&app, |c| {
+    with_db(&app, generation, |c| {
         let owned: bool = c
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM books WHERE asin=?1)",
@@ -156,13 +165,16 @@ fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
 pub fn edit_note(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    generation: u64,
     id: i64,
     asin: String,
     text: String,
     expected: String,
 ) -> Result<(), String> {
     super::local(&window)?;
-    with_db(&app, |c| change(c, id, &asin, &expected, Some(&text)))?;
+    with_db(&app, generation, |c| {
+        change(c, id, &asin, &expected, Some(&text))
+    })?;
     let _ = app.emit_to("main", "notes-changed", ());
     Ok(())
 }
@@ -170,12 +182,13 @@ pub fn edit_note(
 pub fn delete_note(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    generation: u64,
     id: i64,
     asin: String,
     expected: String,
 ) -> Result<(), String> {
     super::local(&window)?;
-    with_db(&app, |c| change(c, id, &asin, &expected, None))?;
+    with_db(&app, generation, |c| change(c, id, &asin, &expected, None))?;
     let _ = app.emit_to("main", "notes-changed", ());
     Ok(())
 }
@@ -184,6 +197,7 @@ pub fn delete_note(
 pub async fn export_notes(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    generation: u64,
     old: bool,
     confirmation: String,
 ) -> Result<bool, String> {
@@ -201,8 +215,7 @@ pub async fn export_notes(
         );
     }
     // Pin both account generation and a data snapshot before opening the dialog.
-    let generation = super::metadata::account_generation(&app)?;
-    let notes = with_db(&app, |c| {
+    let notes = with_db(&app, generation, |c| {
         if !old {
             return read(c);
         }

@@ -208,6 +208,21 @@ fn failed_protected_save_or_cancelled_exchange_cannot_connect() {
 }
 
 #[test]
+fn stale_note_session_is_rejected_even_after_another_account_connects(){
+    let runtime=tokio::runtime::Builder::new_current_thread().build().unwrap();
+    runtime.block_on(async{
+        let state=MetadataState::with_auth(Some(registration_auth(&response(),Profile::Ios).unwrap()));
+        assert!(state.guard_generation(0).is_ok());
+        state.generation.store(1,Ordering::SeqCst);
+        assert!(state.guard_generation(0).is_err());
+        state.finish_registration(1,registration_auth(&response(),Profile::Ios).unwrap(), |_|Ok(())).await.unwrap();
+        assert!(state.connected());
+        assert!(state.guard_generation(0).is_err());
+        assert!(state.guard_generation(1).is_ok());
+    });
+}
+
+#[test]
 fn registration_diagnostic_reports_shape_without_provider_values() {
     let mut value = response();
     value["response"]["error"] =

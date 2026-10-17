@@ -230,8 +230,7 @@ pub(crate) fn with_account_generation<T>(app:&tauri::AppHandle,generation:u64,f:
     let _guard=state.guard_generation(generation)?;
     f()
 }
-pub(crate) fn with_account_db<T>(app:&tauri::AppHandle,f:impl FnOnce(&rusqlite::Connection)->Result<T,String>)->Result<T,String>{
-    let generation=account_generation(app)?;
+pub(crate) fn with_account_db<T>(app:&tauri::AppHandle,generation:u64,f:impl FnOnce(&rusqlite::Connection)->Result<T,String>)->Result<T,String>{
     with_account_generation(app,generation,||{
         let namespace=app.state::<MetadataState>().namespace.lock().map_err(|_|"Account storage unavailable")?.clone().ok_or("Sign in before accessing notes")?;
         // Open the captured namespace directly; sign-out may revoke connected()

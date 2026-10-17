@@ -28,42 +28,55 @@ export function NotesPanel({
     [editText, setEditText] = useState(""),
     [deleting, setDeleting] = useState<number>(),
     [confirmation, setConfirmation] = useState("");
+  const context = useRef<number | null>(null);
   const alive = useRef(true),
     revision = useRef(0);
   const load = async () => {
     const id = ++revision.current;
-    const value = await invoke<Note[]>("list_notes");
+    if (context.current === null) return;
+    const value = await invoke<Note[]>("list_notes", {
+      generation: context.current,
+    });
     if (alive.current && id === revision.current) setNotes(value);
   };
   useEffect(() => {
     if (!desktop) return;
     alive.current = true;
+    let dead = false;
     let stop: (() => void) | undefined;
-    void load().catch(() => {
-      if (alive.current)
-        setStatus(
-          "Notes could not load. Close and reopen the app; your saved notes have not been reset.",
-        );
-    });
+    void invoke<number>("notes_session")
+      .then((generation) => {
+        if (!dead && alive.current) {
+          context.current = generation;
+          return load();
+        }
+      })
+      .catch(() => {
+        if (!dead && alive.current)
+          setStatus(
+            "Notes could not load. Close and reopen the app; your saved notes have not been reset.",
+          );
+      });
     void listen(
       "notes-changed",
       () =>
         void load().catch(() => {
-          if (alive.current)
+          if (!dead && alive.current)
             setStatus("Could not refresh notes. Reopen this window.");
         }),
     )
       .then((f) => {
-        if (alive.current) stop = f;
+        if (!dead && alive.current) stop = f;
         else f();
       })
       .catch(() => {
-        if (alive.current)
+        if (!dead && alive.current)
           setStatus(
             "Automatic note refresh could not connect. Reopen the app before editing notes.",
           );
       });
     return () => {
+      dead = true;
       alive.current = false;
       revision.current++;
       stop?.();
@@ -75,6 +88,10 @@ export function NotesPanel({
   const run = async (task: () => Promise<void>) => {
     setBusy(true);
     try {
+      if (context.current === null)
+        throw Error(
+          "Notes are still connecting. Reopen the app if this persists.",
+        );
       await task();
     } catch (e) {
       if (alive.current) setStatus(String(e));
@@ -90,7 +107,12 @@ export function NotesPanel({
       const asin = selected,
         text = draft.text,
         position = draft.position;
-      await invoke("save_note", { asin, text, position });
+      await invoke("save_note", {
+        asin,
+        text,
+        position,
+        generation: context.current,
+      });
       if (!alive.current) return;
       setDrafts((d) => clearDraft(d, asin, text));
       setStatus("Note saved on this PC.");
@@ -180,6 +202,7 @@ export function NotesPanel({
                   onClick={() =>
                     void run(async () => {
                       await invoke("edit_note", {
+                        generation: context.current,
                         id: n.id,
                         asin: n.asin,
                         text: editText,
@@ -219,6 +242,7 @@ export function NotesPanel({
                   onClick={() =>
                     void run(async () => {
                       await invoke("delete_note", {
+                        generation: context.current,
                         expected: n.text,
                         id: n.id,
                         asin: n.asin,
@@ -267,6 +291,7 @@ export function NotesPanel({
           onClick={() =>
             void run(async () => {
               const saved = await invoke<boolean>("export_notes", {
+                generation: context.current,
                 old: confirmation === "EXPORT OLD NOTES",
                 confirmation,
               });

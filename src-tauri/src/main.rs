@@ -884,6 +884,7 @@ fn main() {
             open_player,
             player_command,
             select_chapter,
+            notes::notes_session,
             notes::save_note,
             notes::list_notes,
             notes::edit_note,
