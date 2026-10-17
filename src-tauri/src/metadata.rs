@@ -474,11 +474,8 @@ pub async fn api_login(
         .map_err(|_| "Login state unavailable")? = Some(p);
     let handle = app.clone();
     let close_handle = app.clone();
-    let profile = crate::account_web_profile(&app)?;
-    let login = WebviewWindowBuilder::new(&app, "metadata-login", WebviewUrl::External(url))
+    let login = crate::privacy::provider_view(&app, WebviewWindowBuilder::new(&app, "metadata-login", WebviewUrl::External(url)))?
         .title("Connect library API · Amazon sign-in")
-        .data_directory(profile)
-        .incognito(!crate::privacy::remember(&app))
         .devtools(cfg!(debug_assertions))
         .inner_size(650.0, 780.0)
         .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
@@ -539,7 +536,7 @@ async fn register(app: &tauri::AppHandle, p: Pending, code: String) -> Result<()
         |entry| app.state::<MetadataState>().trace(entry),
     )
     .await?;
-    login_report(app, "saving", "Protecting your account on this PC…");
+    login_report(app, "saving", "Protecting your account on this device…");
     app.state::<MetadataState>()
         .finish_registration(p.generation, auth, |auth| save_verified(app, auth))
         .await

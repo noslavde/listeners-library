@@ -143,10 +143,11 @@ fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
         rand::random::<u128>()
     ));
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(target_os = "macos")]
+        { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        let mut file = options.open(&temporary)
             .map_err(|_| "Cannot create export file")?;
         file.write_all(bytes)
             .and_then(|_| file.sync_all())

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Listeners Library Experimental",
+  "identifier": "dev.noslavde.listeners-library.macos-alpha",
+  "build": {
+    "beforeBuildCommand": "node scripts/prepare-macos.mjs"
+  },
+  "bundle": {
+    "targets": ["dmg"],
+    "icon": ["icons/icon.icns"],
+    "shortDescription": "Experimental Mac audiobook companion",
+    "longDescription": "Untested experimental macOS build. Independent and unaffiliated with Audible or Amazon. Requires a Mac tester to verify account sign-in, official website playback and cleanup.",
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": true
+    }
+  }
+}

@@ -80,14 +80,11 @@ pub async fn set_website_privacy(
     Ok(())
 }
 fn remove_tree(path: &Path) -> Result<(), String> {
-    use std::os::windows::fs::MetadataExt;
+    crate::storage::reject_link(path)?;
     if !path.exists() {
         return Ok(());
     }
     let meta = fs::symlink_metadata(path).map_err(|_| "Cannot inspect local data")?;
-    if meta.file_attributes() & 0x400 != 0 {
-        return Err("Refusing to follow a linked local-data path".into());
-    }
     if meta.is_dir() {
         for entry in fs::read_dir(path).map_err(|_| "Cannot read local data")? {
             remove_tree(&entry.map_err(|_| "Cannot inspect local data")?.path())?;
@@ -122,15 +119,7 @@ pub fn apply_pending_reset(root: &Path) -> Result<(), String> {
         return Err("Invalid data-removal request; nothing was removed".into());
     }
     // Take the same profile lock used by storage initialization before any removal.
-    use std::os::windows::fs::OpenOptionsExt;
-    crate::storage::reject_link(&root.join(format!("{}.lock", crate::storage::SCOPE)))?;
-    let _guard = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .share_mode(0)
-        .open(root.join(format!("{}.lock", crate::storage::SCOPE)))
+    let _guard = crate::storage::profile_lock(&root.join(format!("{}.lock", crate::storage::SCOPE)))
         .map_err(|_| "Close the other copy of the app before removing local data")?;
     // The tombstone prevents a reset from importing an older plaintext database.
     fs::write(
@@ -140,6 +129,8 @@ pub fn apply_pending_reset(root: &Path) -> Result<(), String> {
     .map_err(|_| "Cannot save data-removal state")?;
     if mode == "all" {
         retry_remove(&root.join(crate::storage::SCOPE))?;
+        #[cfg(target_os = "macos")]
+        crate::protection::forget_wrapping_key()?;
     }
     if !cfg!(debug_assertions) {
         #[cfg(not(test))]
@@ -188,6 +179,15 @@ pub async fn erase_local_data(
     if legacy_only && cfg!(debug_assertions) {
         return Err("Legacy cleanup is available in the installed app".into());
     }
+    // WKWebView's named store is outside the SQLCipher directory. Clear it and
+    // wait for WebKit's completion before writing the destructive-reset marker.
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(w) = app.get_webview_window("metadata-login") {
+            w.destroy().map_err(|_| "Cannot close sign-in before data removal")?;
+        }
+        super::clear_official_session(&app)?;
+    }
     let root = app
         .path()
         .app_local_data_dir()
@@ -222,6 +222,7 @@ mod tests {
 }
 
 /// Disable browser-managed password saving and form autofill in provider views.
+#[cfg(windows)]
 pub fn harden_view(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows::core::Interface;
     let owner = window.clone();
@@ -237,6 +238,7 @@ pub fn harden_view(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// Wait for the actual platform completion, not merely submission of deletion.
 /// Called on async command workers, never in the Windows UI event handler.
+#[cfg(windows)]
 pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows::core::Interface;
     use webview2_com::{ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2_13, ICoreWebView2Profile2}};
@@ -255,4 +257,52 @@ pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
         Ok(true) => Ok(()),
         _ => Err("Website data cleanup did not complete; retry sign-out before signing in again".into()),
     }
+}
+
+#[cfg(target_os = "macos")]
+pub fn harden_view(_: &tauri::WebviewWindow) -> Result<(), String> {
+    // WKWebView has no public switch matching WebView2 password autosave.
+    // No private WebKit preference is used; disclose OS-managed autofill.
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use objc2::{MainThreadMarker, runtime::AnyObject};
+    use objc2_foundation::NSDate;
+    use objc2_web_kit::{WKWebView, WKWebsiteDataStore};
+    let (tx, rx) = std::sync::mpsc::channel();
+    window.with_webview(move |view| {
+        // The borrowed WKWebView stays on Tauri's UI thread. WebKit retains
+        // the completion block until removal finishes; only the sender escapes.
+        let Some(mtm) = MainThreadMarker::new() else { return; };
+        unsafe {
+            let object = &*(view.inner() as *const AnyObject);
+            let webview: &WKWebView = &*(object as *const AnyObject as *const WKWebView);
+            let store = webview.configuration().websiteDataStore();
+            let types = WKWebsiteDataStore::allWebsiteDataTypes(mtm);
+            let date = NSDate::dateWithTimeIntervalSince1970(0.0);
+            let done = block2::RcBlock::new(move || { let _ = tx.send(()); });
+            store.removeDataOfTypes_modifiedSince_completionHandler(&types, &date, &done);
+        }
+    }).map_err(|_| "Cannot start website data cleanup")?;
+    rx.recv_timeout(std::time::Duration::from_secs(30))
+        .map_err(|_| "Website cleanup did not complete; retry sign-out before signing in again".into())
+}
+
+/// All provider windows must share the same platform-owned session store.
+pub fn provider_view<'a>(
+    app: &tauri::AppHandle,
+    builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>,
+) -> Result<tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>, String> {
+    let builder = builder.incognito(!remember(app));
+    #[cfg(windows)]
+    let builder = builder.data_directory(crate::account_web_profile(app)?);
+    #[cfg(target_os = "macos")]
+    let builder = builder.data_store_identifier(if cfg!(debug_assertions) {
+        *b"LmacDevSession01"
+    } else {
+        *b"LmacExpSession01"
+    });
+    Ok(builder)
 }
