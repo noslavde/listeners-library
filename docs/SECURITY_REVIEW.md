@@ -31,3 +31,7 @@ Recovery is intentionally limited: old shared notes can be exported as readable 
 The final frontend suite passes 110 tests. The native optimized Windows suite passes 80 tests, including encryption/tamper/ownership tests, local-origin rejection, note validation/edit boundaries and complete export replacement. The frontend production build, packaging safeguards, formatting checks, workflow syntax and mocked release-attachment paths pass. The Windows NSIS installer is built locally; it is unsigned.
 
 A synthetic browser UI check verified Book A draft → Book B draft → return to A, retained initial timestamp, saving, editing and disabled export without confirmation. This uses mocked local commands and does not replace testing native file dialogs, account cleanup or actual Audible playback. Fresh-machine installation and the live gates above remain unverified.
+
+## Owner smoke test — October 16, 2026
+
+The owner reported that sign-in, library loading and owned-book playback in the mini player work with the local 0.2.1 installer on their existing PC. This is a user-reported pass for those three checks. It does not establish fresh-machine installation, MFA/expired-session coverage, cross-account isolation, sign-out cleanup, mobile resume or all chapter controls; those remain separate release gates.
