@@ -6,14 +6,21 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to build and attach installers to (optional)'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: windows-${{ github.event_name == 'pull_request' && github.ref || github.event.release.tag_name || inputs.release_tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') }}
 
 jobs:
   build:
@@ -25,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -33,11 +41,20 @@ jobs:
       - name: Verify release version
         env:
           BUILD_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ($version -ne $tauri) { throw 'Frontend and installer versions differ.' }
-          if ($env:BUILD_REF.StartsWith('refs/tags/') -and $env:BUILD_REF -ne "refs/tags/v$version") {
+          $tag = $env:RELEASE_TAG
+          if (!$tag -and $env:BUILD_REF.StartsWith('refs/tags/')) { $tag = $env:BUILD_REF.Substring(10) }
+          if ($tag) {
+            if ($tag.StartsWith('-')) { throw 'Release tags cannot begin with a dash.' }
+            git show-ref --verify --quiet "refs/tags/$tag"
+            if ($LASTEXITCODE -ne 0) { throw 'Release target must be an existing tag.' }
+          }
+          if (($env:EVENT_NAME -eq 'push' -and $tag -or $tag -match '^v[0-9]') -and $tag -ne "v$version") {
             throw 'Release tag must match the application version.'
           }
       - name: Select stable Rust MSVC
@@ -58,6 +75,9 @@ jobs:
             windows-2022-rust-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-
       - run: npm ci
       - run: npm test
+      - name: Check release attachment logic
+        if: github.event_name != 'release' && inputs.release_tag == '' && !startsWith(github.ref, 'refs/tags/')
+        run: node scripts/check-release-workflow.mjs
       - name: Fetch locked native dependencies
         run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
       - name: Prepare embedded frontend and dependency notices
@@ -91,8 +111,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  draft-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+  release-assets:
+    if: github.event_name == 'release' || inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -102,11 +122,39 @@ jobs:
         with:
           name: Listeners-Library-Windows-x64
           path: deployment
-      - name: Create draft test release
+      - name: Attach installer or create draft test release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || github.ref_name }}
+          EXISTING_RELEASE_ONLY: ${{ github.event_name == 'release' || inputs.release_tag != '' }}
         run: |
-          gh release create "$GITHUB_REF_NAME" deployment/* --verify-tag --draft --prerelease \
-            --title "Listeners Library $GITHUB_REF_NAME" \
-            --notes "Unsigned Windows x64 test build. Read TESTER_GUIDE.md and PRIVACY.md before installing. Review the live release checklist before publishing."
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json tagName > /dev/null 2>&1; then
+            # Preserve an existing installer's bytes on reruns. Generate any
+            # missing checksum from that actual published download.
+            installer=$(find deployment -maxdepth 1 -name '*-Setup.exe' -printf '%f\n')
+            if [ -z "$installer" ]; then echo 'Installer artifact missing' >&2; exit 1; fi
+            assets=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+            if printf '%s\n' "$assets" | grep -Fxq "$installer"; then
+              mkdir -p existing
+              gh release download "$RELEASE_TAG" --pattern "$installer" --dir existing
+              (cd existing && sha256sum "$installer") > deployment/SHA256SUMS.txt
+            fi
+            for file in deployment/*; do
+              name=$(basename "$file")
+              if printf '%s\n' "$assets" | grep -Fxq "$name"; then
+                echo "Preserving existing asset: $name"
+              else
+                gh release upload "$RELEASE_TAG" "$file"
+              fi
+            done
+          else
+            if [ "$EXISTING_RELEASE_ONLY" = 'true' ]; then
+              echo 'The requested release could not be read; no new release was created.' >&2
+              exit 1
+            fi
+            gh release create "$RELEASE_TAG" deployment/* --verify-tag --draft --prerelease \
+              --title "Listener's Library $RELEASE_TAG" \
+              --notes "Download the Windows x64 Setup.exe under Assets to install. Source-code archives are for developers. Unsigned test build; read TESTER_GUIDE.md and PRIVACY.md before installing."
+          fi
