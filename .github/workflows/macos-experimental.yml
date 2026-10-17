@@ -93,9 +93,23 @@ jobs:
       - name: Verify app signature and architecture
         run: |
           set -euo pipefail
-          app="src-tauri/target/$LL_MAC_TARGET/release/bundle/macos/Listeners Library Experimental.app"
+          image_dir="src-tauri/target/$LL_MAC_TARGET/release/bundle/dmg"
+          count=$(find "$image_dir" -name '*.dmg' | wc -l | tr -d ' ')
+          test "$count" = 1
+          image=$(find "$image_dir" -name '*.dmg')
+          mount="$RUNNER_TEMP/listeners-library-verify"
+          mkdir -p "$mount"
+          hdiutil verify "$image"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$image"
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$mount/Listeners Library Experimental.app"
           codesign --verify --deep --strict --verbose=2 "$app"
-          lipo -archs "$app/Contents/MacOS/listeners-library"
+          arch=$(lipo -archs "$app/Contents/MacOS/listeners-library")
+          if [ "$LL_MAC_TARGET" = aarch64-apple-darwin ]; then
+            test "$arch" = arm64
+          else
+            test "$arch" = x86_64
+          fi
       - name: Prepare separate test download
         env:
           ARCH: ${{ matrix.arch }}
@@ -166,4 +180,4 @@ jobs:
           fi
           gh release create "$TAG" deployment/* --verify-tag --draft --prerelease --latest=false \
             --title "Listener's Library — macOS experimental alpha 1 (UNTESTED)" \
-            --notes-file docs/MACOS_EXPERIMENTAL.md
+            --notes-file docs/MACOS_RELEASE_NOTES.md
