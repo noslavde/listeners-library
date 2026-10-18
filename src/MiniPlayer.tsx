@@ -12,12 +12,18 @@ import {
   speeds,
   useListening,
 } from "./listening";
-import { adjacentChapters, chapterInfo, finishTime } from "./playerInfo";
+import {
+  adjacentChapters,
+  chapterInfo,
+  finishTime,
+  PreviousChapterIntent,
+} from "./playerInfo";
 import { ShortcutHelp, usePlayerShortcuts } from "./shortcuts";
 import { useCurrentBook } from "./CurrentBook";
 import { ThemePicker } from "./ThemePicker";
 import { VolumeControl } from "./VolumeControl";
-type Panel = "none" | "chapters" | "sleep" | "settings";
+import { ListeningHistoryPanel, useListeningHistory } from "./ListeningHistory";
+type Panel = "none" | "chapters" | "sleep" | "settings" | "history";
 export function MiniPlayer() {
   const adapter = useMemo(() => new OfficialAdapter(), []),
     settings = useListening(),
@@ -35,6 +41,21 @@ export function MiniPlayer() {
     [panel, setPanel] = useState<Panel>("none");
   const [syncing, setSyncing] = useState(false),
     syncId = useRef(0);
+  const previousIntent = useRef(new PreviousChapterIntent());
+  const history = useListeningHistory(book),
+    reviewShown = useRef("");
+  const controlsAvailable = s.available && !history.status?.waiting;
+  useEffect(() => {
+    const conflict = history.status?.conflict;
+    if (!conflict || !book) return;
+    const key = `${book.asin}:${conflict.pc.at}:${conflict.audible}`;
+    if (key === reviewShown.current) return;
+    reviewShown.current = key;
+    setPanel("history");
+    void invoke("resize_mini_player", { panel: "history" }).catch((e) =>
+      setError(String(e)),
+    );
+  }, [history.status?.conflict, book?.asin]);
   usePlayerShortcuts(setError);
   const run = async (f: () => Promise<unknown>) => {
     setError("");
@@ -54,6 +75,9 @@ export function MiniPlayer() {
     };
     adapter.subscribe(setS).then(keep);
     listen<Book>("player-book", (e) => {
+      previousIntent.current.reset();
+      reviewShown.current = "";
+      setPanel("none");
       syncId.current++;
       setSyncing(false);
       setBook(e.payload);
@@ -83,6 +107,7 @@ export function MiniPlayer() {
     };
   }, [adapter]);
   const resync = async () => {
+    previousIntent.current.reset();
     if (!book || syncing) return;
     const id = ++syncId.current;
     setSyncing(true);
@@ -103,9 +128,26 @@ export function MiniPlayer() {
       if (id === syncId.current) setSyncing(false);
     }
   };
-  const command = (a: Action, v?: number) => run(() => adapter.command(a, v));
+  const command = (a: Action, v?: number) => {
+    if (a !== "volume") previousIntent.current.reset();
+    return run(() => adapter.command(a, v));
+  };
+  const previousChapter = () => {
+    const intent = previousIntent.current.press(book, s.position);
+    if (!intent) return;
+    void run(async () => {
+      if (intent.restart) await adapter.command("seek", intent.chapter.start);
+      else await adapter.chapter(intent.chapter.start, intent.chapter.title);
+      setNotice(
+        intent.restart
+          ? "Chapter restarted · press again within 3s for previous"
+          : `Previous chapter · ${intent.chapter.title}`,
+      );
+    });
+  };
   const toggle = (next: Panel) =>
     run(async () => {
+      if (next === "history") previousIntent.current.reset();
       const value = panel === next ? "none" : next;
       setPanel(value);
       await invoke("resize_mini_player", { panel: value });
@@ -165,7 +207,7 @@ export function MiniPlayer() {
       <div className="mini-controls">
         <button
           aria-label="Skip back 15 seconds"
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onClick={() => command("seek", Math.max(0, s.position - 15))}
         >
           −15
@@ -173,14 +215,14 @@ export function MiniPlayer() {
         <button
           className="mini-play primary-action"
           aria-label={s.paused ? "Play" : "Pause"}
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onClick={() => command(s.paused ? "play" : "pause")}
         >
           {s.paused ? "▶" : "Ⅱ"}
         </button>
         <button
           aria-label="Skip forward 15 seconds"
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onClick={() => command("seek", Math.min(s.duration, s.position + 15))}
         >
           +15
@@ -188,7 +230,7 @@ export function MiniPlayer() {
         <select
           aria-label="Playback speed"
           value={s.speed}
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onChange={(e) => command("speed", Number(e.target.value))}
         >
           {[...new Set([...speeds, s.speed])]
@@ -202,7 +244,7 @@ export function MiniPlayer() {
         <button
           aria-label="Save bookmark"
           title="Save bookmark"
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onClick={() =>
             run(() => invoke("player_shortcut", { action: "bookmark" }))
           }
@@ -213,16 +255,9 @@ export function MiniPlayer() {
       <div className="mini-chapter">
         <button
           aria-label="Previous chapter"
-          title={
-            adjacent.previous
-              ? `Previous: ${adjacent.previous.title}`
-              : "First chapter"
-          }
-          disabled={!s.available || !adjacent.previous}
-          onClick={() => {
-            const c = adjacent.previous;
-            if (c) void run(() => adapter.chapter(c.start, c.title));
-          }}
+          title="Restart chapter; press again within 3 seconds for the previous chapter"
+          disabled={!controlsAvailable || !chapter}
+          onClick={previousChapter}
         >
           ❮
         </button>
@@ -234,8 +269,9 @@ export function MiniPlayer() {
           title={
             adjacent.next ? `Next: ${adjacent.next.title}` : "Last chapter"
           }
-          disabled={!s.available || !adjacent.next}
+          disabled={!controlsAvailable || !adjacent.next}
           onClick={() => {
+            previousIntent.current.reset();
             const c = adjacent.next;
             if (c) void run(() => adapter.chapter(c.start, c.title));
           }}
@@ -273,7 +309,7 @@ export function MiniPlayer() {
           min={start}
           max={Math.max(start + 1, end)}
           value={Math.max(start, Math.min(end, s.position))}
-          disabled={!s.available}
+          disabled={!controlsAvailable}
           onChange={(e) => command("seek", Number(e.target.value))}
         />
         <div className="mini-timing">
@@ -308,7 +344,15 @@ export function MiniPlayer() {
           Chapters
         </button>
         <button
-          disabled={!book || !s.available || s.sample || syncing}
+          aria-expanded={panel === "history"}
+          aria-controls="mini-panel"
+          className={history.status?.conflict ? "timer-active" : ""}
+          onClick={() => void toggle("history")}
+        >
+          History
+        </button>
+        <button
+          disabled={!book || !controlsAvailable || s.sample || syncing}
           aria-busy={syncing}
           title="Fetch Audible’s saved position and move to it, forward or backward. Pause on mobile first and allow it to sync."
           onClick={() => void resync()}
@@ -333,6 +377,9 @@ export function MiniPlayer() {
       </div>
       {panel !== "none" && (
         <div id="mini-panel" className="mini-panel">
+          {panel === "history" && (
+            <ListeningHistoryPanel history={history} available={s.available} />
+          )}
           {panel === "chapters" && (
             <>
               <p>{chapter?.title ?? "Chapter information unavailable"}</p>
@@ -343,9 +390,10 @@ export function MiniPlayer() {
                   duration={s.duration}
                   available={s.available}
                   seekable={s.seekable}
-                  onChapter={(position, title) =>
-                    run(() => adapter.chapter(position, title))
-                  }
+                  onChapter={(position, title) => {
+                    previousIntent.current.reset();
+                    return run(() => adapter.chapter(position, title));
+                  }}
                   onSeek={(p) => command("seek", p)}
                 />
               )}
@@ -380,7 +428,7 @@ export function MiniPlayer() {
                 </button>
               )}
               <button
-                disabled={!s.available}
+                disabled={!controlsAvailable}
                 onClick={() => command("recover")}
               >
                 Recover jump
@@ -394,15 +442,25 @@ export function MiniPlayer() {
                 Show Audible player
               </button>
               <p className="mini-version">
-                Listener’s Library · 0.2.2 · Unofficial beta
+                Listener’s Library · 0.2.3 · Unofficial beta
               </p>
             </>
           )}
         </div>
       )}
-      {(error || settings.error || current.error || notice) && (
+      {(error ||
+        settings.error ||
+        current.error ||
+        notice ||
+        history.status?.waiting) && (
         <p className="mini-notice" role="status">
-          {error || settings.error || current.error || notice}
+          {error ||
+            settings.error ||
+            current.error ||
+            notice ||
+            (history.status?.conflict
+              ? "Choose a saved position in History"
+              : "Checking saved progress…")}
         </p>
       )}
     </div>

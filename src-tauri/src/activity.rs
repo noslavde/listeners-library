@@ -11,6 +11,7 @@ struct Sample {
 }
 #[derive(Clone)]
 struct Pending {
+    generation: u64,
     asin: String,
     seconds: f64,
     last_listened: i64,
@@ -40,22 +41,35 @@ fn credit(previous: &Sample, current: &super::PlayerState, now: Instant) -> f64 
     elapsed.min(advanced / previous.speed)
 }
 fn persist(app: &tauri::AppHandle, p: Pending) {
-    // Pin the originating database before handing work to another thread.
-    let Ok(c) = super::db(app) else { return; };
-    let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-            if write_activity(&c, &p).is_ok() {
-                let _ = app.emit_to("main", "library-activity-changed", ());
-            }
-    });
+    // Never resolve the destination from a later account session.
+    if super::metadata::with_account_db(app, p.generation, |c| {
+        write_activity(c, &p).map_err(|_| "Cannot save listening activity".into())
+    })
+    .is_ok()
+    {
+        let _ = app.emit_to("main", "library-activity-changed", ());
+    }
 }
 pub fn reset(app: &tauri::AppHandle) {
-    if let Ok(mut tracker) = app.state::<Activity>().0.lock() { *tracker = (None, None); }
+    if let Ok(mut tracker) = app.state::<Activity>().0.lock() {
+        *tracker = (None, None);
+    }
+}
+pub(crate) fn finish(app: &tauri::AppHandle) {
+    if let Ok(mut tracker) = app.state::<Activity>().0.lock() {
+        if let Some(p) = tracker.1.take() {
+            persist(app, p);
+        }
+        tracker.0 = None;
+    }
 }
 fn write_activity(c: &rusqlite::Connection, p: &Pending) -> rusqlite::Result<usize> {
     c.execute("INSERT INTO listening_activity(asin,listened_seconds,last_listened,position,duration,hidden) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(asin) DO UPDATE SET listened_seconds=listened_seconds+excluded.listened_seconds,position=CASE WHEN excluded.last_listened>=last_listened THEN excluded.position ELSE position END,duration=excluded.duration,last_listened=MAX(last_listened,excluded.last_listened)",rusqlite::params![p.asin,p.seconds,p.last_listened,p.position,p.duration])
 }
 pub fn observe(app: &tauri::AppHandle, s: &super::PlayerState) {
+    let Ok(generation) = super::metadata::account_generation(app) else {
+        return;
+    };
     let state = app.state::<Activity>();
     let Ok(mut tracker) = state.0.lock() else {
         return;
@@ -64,7 +78,7 @@ pub fn observe(app: &tauri::AppHandle, s: &super::PlayerState) {
     if tracker
         .1
         .as_ref()
-        .map(|p| p.asin != s.asin)
+        .map(|p| p.asin != s.asin || p.generation != generation)
         .unwrap_or(false)
     {
         if let Some(p) = tracker.1.take() {
@@ -77,7 +91,11 @@ pub fn observe(app: &tauri::AppHandle, s: &super::PlayerState) {
         .map(|prev| credit(prev, s, now))
         .unwrap_or(0.0);
     if seconds > 0.0 {
+        if let Err(e) = super::history::heard(app, s) {
+            let _ = app.emit_to("mini-player", "player-error", e);
+        }
         let p = tracker.1.get_or_insert_with(|| Pending {
+            generation,
             asin: s.asin.clone(),
             seconds: 0.0,
             last_listened: 0,
@@ -181,6 +199,7 @@ mod tests {
         let c = rusqlite::Connection::open_in_memory().unwrap();
         c.execute_batch("CREATE TABLE listening_activity(asin TEXT PRIMARY KEY,listened_seconds REAL,last_listened INTEGER,position REAL,duration REAL,hidden INTEGER);").unwrap();
         let recent = Pending {
+            generation: 0,
             asin: "B012345678".into(),
             seconds: 300.0,
             last_listened: 200,

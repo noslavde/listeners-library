@@ -1,10 +1,12 @@
-# Privacy and local data — 0.2.1 beta
+# Privacy and local data — 0.2.3 beta
 
 Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or remote notes service. Audible/Amazon receive normal account and playback requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
 
 ## What stays on this PC
 
 Your library, notes, local listening history, saved positions and account-specific selections are stored in encrypted local databases. Login tokens and the database key are protected by Windows for the current Windows user. The key is random, is not in the installer and is not sent to the app interface. There is no unencrypted database fallback or developer recovery key.
+
+The recovery log stores book identifiers, playback positions, durations, local timestamps and event labels. It contains no audio, cookies or tokens. It is limited to 100 entries per book and 3,000 per account, with entries older than 90 days pruned on subsequent saves. The most recent checkpoint per book remains separately until replaced by listening or an explicit position choice. It is not an exhaustive listening history or a record of mobile sessions.
 
 Website sign-in is separate: Microsoft's WebView2 manages Audible/Amazon website data locally. It is not encrypted by the library database. Website password saving and autofill are disabled. Turn off **Remember website sign-in on this PC** under Privacy & local storage to use private website windows on subsequent connections. The encrypted library account is still remembered until you sign out.
 

@@ -62,6 +62,9 @@ pub async fn resync_player(
     asin: String,
 ) -> Result<SyncResult, String> {
     super::desktop::player_local(&window)?;
+    if super::history::blocked(&app) {
+        return Err("Choose a saved position before checking another device's progress.".into());
+    }
     let generation = super::metadata::account_generation(&app)?;
     if !super::valid_asin(&asin) {
         return Err("Invalid book".into());
@@ -77,7 +80,36 @@ pub async fn resync_player(
         super::metadata::latest_position(&app, &asin, generation),
     )
     .await
-    .map_err(|_| "Audible took too long to return a position. Check your connection and try again.")??;
+    .map_err(|_| {
+        "Audible took too long to return a position. Check your connection and try again."
+    })??;
+    let revision = apply_position(&app, &asin, generation, revision, position).await?;
+    super::history::chosen(&app, &asin, generation, revision)?;
+    Ok(SyncResult { position })
+}
+pub(crate) async fn seek_saved_position(
+    app: &tauri::AppHandle,
+    asin: &str,
+    generation: u64,
+    position: f64,
+) -> Result<u64, String> {
+    let hub = app.state::<super::desktop::PlayerHub>();
+    let revision = super::metadata::with_account_generation(app, generation, || {
+        let state = hub.0.lock().map_err(|_| "Player unavailable")?;
+        ready(&state, asin, now())?;
+        Ok(hub.changed())
+    })?;
+    apply_position(app, asin, generation, revision, position).await
+}
+async fn apply_position(
+    app: &tauri::AppHandle,
+    asin: &str,
+    generation: u64,
+    revision: u64,
+    position: f64,
+) -> Result<u64, String> {
+    super::history::flush(app, "before-position-change")?;
+    let hub = app.state::<super::desktop::PlayerHub>();
     super::metadata::with_account_generation(&app, generation, || {
         let state = hub.0.lock().map_err(|_| "Player state unavailable")?;
         if hub.revision() != revision {
@@ -119,7 +151,7 @@ pub async fn resync_player(
             Ok(s.position >= position - 1.0 && s.position <= position + advanced + 2.0)
         })?;
         if confirmed {
-            return Ok(SyncResult { position });
+            return Ok(revision);
         }
         if started.elapsed() > Duration::from_secs(5) {
             return Err("Audible did not confirm the saved position. Check the timeline or show the official player before continuing.".into());

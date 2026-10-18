@@ -23,6 +23,29 @@ export function adjacentChapters(book: Book | undefined, position: number) {
   );
   return { previous: chapters[index - 1], next: chapters[index + 1] };
 }
+// Track the requested chapter, rather than waiting for delayed player telemetry.
+export class PreviousChapterIntent {
+  private last?: { asin: string; index: number; at: number };
+  reset() {
+    this.last = undefined;
+  }
+  press(book: Book | undefined, position: number, now = performance.now()) {
+    if (!book) return undefined;
+    const chapters = orderedChapters(book);
+    if (!chapters.length) return undefined;
+    const current = Math.max(
+      0,
+      chapters.reduce((last, c, i) => (c.start <= position ? i : last), -1),
+    );
+    const repeat =
+      this.last?.asin === book.asin &&
+      now >= this.last.at &&
+      now - this.last.at <= 3000;
+    const index = repeat ? Math.max(0, this.last!.index - 1) : current;
+    this.last = { asin: book.asin, index, at: now };
+    return { chapter: chapters[index], restart: !repeat || index === current };
+  }
+}
 export function chapterInfo(book: Book | undefined, s: Snapshot) {
   if (!book || !s.available || s.duration <= 0) return null;
   const chapters = orderedChapters(book).filter((c) => c.start < s.duration);

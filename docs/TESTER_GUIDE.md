@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.2 beta
+# Getting started with Listener’s Library 0.2.3 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -19,7 +19,7 @@ You can browse another series without interrupting playback. **Explore** groups 
 
 ## Controls and notes
 
-- Mini player: play/pause, 15-second skips, seek bar, speed and app volume. The current chapter appears above the timeline; its arrows go to the previous/next chapter. **Chapters** keeps the full dropdown, while **Sleep** and **More** reveal additional controls.
+- Mini player: play/pause, 15-second skips, seek bar, speed and app volume. **Previous restarts the chapter**; another click within **three seconds** steps to the preceding chapter. Further quick clicks continue backward. Next goes to the following chapter. **Chapters** keeps the full dropdown. **History**, **Sleep** and **More** reveal additional controls.
 - Click the small book cover to open a larger, resizable artwork window. Close it with **Close ×**, the window's X or Escape; playback continues. Drag the title/author area to move the mini player.
 - In the app: Space plays/pauses; Left/Right skip; B saves a bookmark; M switches mini player/library. These shortcuts leave focused inputs and buttons alone.
 - Elsewhere in Windows: Ctrl+Alt+Space, Ctrl+Alt+Left/Right, Ctrl+Alt+B and Ctrl+Alt+M. Other apps may occupy a shortcut. Headset/media keys also work when Windows selects this app's media session.
@@ -28,7 +28,11 @@ You can browse another series without interrupting playback. **Explore** groups 
 
 ## Progress across devices
 
-Audible's official player handles account progress. The companion also saves checkpoints on this PC. A cloud check time is not the time you last listened. If saved positions differ, the card shows both rather than declaring one newer. Starting a book uses the official player's resume behavior; it does not force the card's local checkpoint.
+Audible's official player handles account progress. The companion separately saves dated PC checkpoints from confirmed listening, rather than from a newly loaded or paused player. A cloud check time is not a listening time. On opening a book, a difference of more than 15 seconds from the saved PC checkpoint pauses startup and opens **History**. Choose **Resume PC** or **Use Audible**. Our integration has no verified cloud listening time, so it does not guess which position is newer or assume the farthest position is the right one.
+
+**History → Recent positions on this PC** lets you restore a dated entry. It is also in **Listening history & recovery** in the main app. Checkpoints save every five seconds while listening, with a final save on pause, book switch or normal app close. The log keeps one periodic entry per minute plus pause/switch/close/explicit position choices. It is bounded to 100 entries per book and 3,000 per account; entries older than 90 days are pruned on a subsequent save. The latest checkpoint per book is retained separately. This stores small metadata records, not audio, and does not track mobile listening sessions.
+
+On first use of this update, any existing PC checkpoint and credited listening record are preserved where available. Older PC checkpoint times may reflect player observations. Positions already overwritten in every old record cannot be reconstructed. Sign-out hides the log with the rest of the account; its database stays encrypted and isolated from other accounts.
 
 When returning from mobile, pause there and allow Audible to save progress, then press **Sync position** in the mini player. This fetches Audible's saved position for the playing book and moves to it, forward or backward, preserving play/pause. It reports success after the official player's timeline reaches that position. If no position is available, the timeline does not fit, or loading prevents a seek, it explains the problem without guessing. Changing books or using playback controls during the check cancels it. The app does not automatically jump after idle: Audible's reported position may still be stale, so check the chapter/time before resuming.
 

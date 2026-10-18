@@ -19,6 +19,7 @@ import { desktop, DemoAdapter, OfficialAdapter, type Action } from "./playback";
 import "./style.css";
 import { MiniPlayer } from "./MiniPlayer";
 import { CoverArtwork } from "./CoverArtwork";
+import { ListeningHistoryPanel, useListeningHistory } from "./ListeningHistory";
 import { MetadataPanel } from "./MetadataPanel";
 import { ListeningControls, useListening } from "./listening";
 import { ContinueShelf, useLibraryActivity } from "./LibraryShelf";
@@ -40,6 +41,7 @@ import { NotesPanel } from "./NotesPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 function App() {
   const libraryRevision = useRef(0),
+    playbackRequest = useRef(0),
     accountEpoch = useRef(0),
     accountConnected = useRef(!desktop);
   const [connected, setConnected] = useState(!desktop);
@@ -61,6 +63,7 @@ function App() {
     available: false,
   });
   const cardProgress = useCardPositions(books.map((b) => b.asin).join(","));
+  const history = useListeningHistory(active);
   const activity = useLibraryActivity(),
     settings = useListening(),
     [demoSort, setDemoSort] = useState<Sort>("title");
@@ -198,12 +201,18 @@ function App() {
   const command = (a: Action, v?: number) => run(() => adapter.command(a, v));
   const open = (b: Book) =>
     run(async () => {
+      const request = ++playbackRequest.current;
       const epoch = accountEpoch.current;
       if (desktop && !accountConnected.current)
         throw Error("Sign in before starting playback.");
       if (desktop && !b.asin.startsWith("DEMO")) {
         await new OfficialAdapter().open(b);
-        if (!accountConnected.current || epoch !== accountEpoch.current) return;
+        if (
+          !accountConnected.current ||
+          epoch !== accountEpoch.current ||
+          request !== playbackRequest.current
+        )
+          return;
         setLive(true);
         setS({
           position: 0,
@@ -412,6 +421,12 @@ function App() {
           onSeek={(p) => command("seek", p)}
         />
       )}
+      {desktop && connected && active && (
+        <details className="app-details" open={!!history.status?.conflict}>
+          <summary>Listening history & recovery</summary>
+          <ListeningHistoryPanel history={history} available={s.available} />
+        </details>
+      )}
       <details className="app-details">
         <summary>Playback help & options</summary>
         <ShortcutHelp />
@@ -447,7 +462,7 @@ function App() {
       <details className="app-details">
         <summary>About & privacy</summary>
         <p>
-          Listener’s Library · Version 0.2.2 · Beta. Unofficial and unaffiliated
+          Listener’s Library · Version 0.2.3 · Beta. Unofficial and unaffiliated
           with Audible or Amazon. Currently supports the US marketplace.
         </p>
         <p>

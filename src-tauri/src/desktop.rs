@@ -1,4 +1,3 @@
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -15,13 +14,13 @@ pub struct NowPlaying {
     pub snapshot: Option<super::PlayerState>,
     pub last_seen: Option<u64>,
 }
-pub struct PlayerHub(pub Mutex<NowPlaying>, Mutex<u64>, AtomicU64);
+pub struct PlayerHub(pub Mutex<NowPlaying>, AtomicU64);
 impl PlayerHub {
     pub(crate) fn revision(&self) -> u64 {
-        self.2.load(Ordering::SeqCst)
+        self.1.load(Ordering::SeqCst)
     }
     pub(crate) fn changed(&self) -> u64 {
-        self.2.fetch_add(1, Ordering::SeqCst) + 1
+        self.1.fetch_add(1, Ordering::SeqCst) + 1
     }
     pub fn new() -> Self {
         Self(
@@ -30,12 +29,12 @@ impl PlayerHub {
                 snapshot: None,
                 last_seen: None,
             }),
-            Mutex::new(0),
             AtomicU64::new(0),
         )
     }
 }
 pub(crate) fn reset_player(app: &tauri::AppHandle) -> Result<(), String> {
+    super::history::reset(app);
     super::cover::dismiss(app);
     super::activity::reset(app);
     super::listening::cancel_sleep(app);
@@ -85,10 +84,14 @@ pub fn select_api_title(
     selected(&app, &asin)
 }
 pub fn selected(app: &tauri::AppHandle, asin: &str) -> Result<(), String> {
-    super::metadata::require_account(app)?;
+    let generation=super::metadata::account_generation(app)?;
+    selected_in_session(app,asin,generation)
+}
+pub(crate) fn selected_in_session(app:&tauri::AppHandle,asin:&str,generation:u64)->Result<(),String>{
+    super::metadata::with_account_generation(app,generation,||Ok(()))?;
     super::cover::dismiss(app);
     super::listening::cancel_sleep(app);
-    let c = super::db(app)?;
+    super::metadata::with_account_db(app,generation,|c|{
     let raw = c
         .query_row("SELECT metadata FROM books WHERE asin=?1", [asin], |r| {
             r.get::<_, String>(0)
@@ -104,11 +107,11 @@ pub fn selected(app: &tauri::AppHandle, asin: &str) -> Result<(), String> {
         last_seen: None,
     };
     drop(current);
-    *state.1.lock().map_err(|_| "Player state unavailable")? = 0;
     for label in ["main", "mini-player"] {
         let _ = app.emit_to(label, "player-book", book.clone());
     }
     Ok(())
+    })
 }
 pub fn record(app: &tauri::AppHandle, s: &super::PlayerState) {
     if !super::metadata::connected(app) {
@@ -131,26 +134,6 @@ pub fn record(app: &tauri::AppHandle, s: &super::PlayerState) {
         .unwrap_or_default()
         .as_secs();
     state.last_seen = Some(now);
-    let Ok(mut last) = hub.1.lock() else { return };
-    if s.sample || !s.available || s.position <= 0.0 || now.saturating_sub(*last) < 10 {
-        return;
-    }
-    *last = now;
-    let asin = asin.to_owned();
-    let position = s.position;
-    let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Ok(c) = super::db(&app) {
-            if c.execute(
-                "INSERT OR REPLACE INTO playback_positions(asin,position,updated) VALUES(?1,?2,?3)",
-                params![asin, position, now as i64],
-            )
-            .is_ok()
-            {
-                let _ = app.emit_to("main", "card-positions-changed", ());
-            }
-        }
-    });
 }
 #[derive(Serialize, Deserialize)]
 pub struct SavedPosition {
@@ -312,6 +295,7 @@ pub fn resize_mini_player(window: tauri::WebviewWindow, panel: String) -> Result
         "chapters" => 330.0,
         "sleep" => 330.0,
         "settings" => 510.0,
+        "history" => 490.0,
         _ => return Err("Unknown player panel".into()),
     };
     let size = window.inner_size().map_err(|_| "Cannot read player size")?;

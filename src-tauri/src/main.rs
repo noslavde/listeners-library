@@ -3,6 +3,7 @@ mod activity;
 mod cover;
 mod current_book;
 mod desktop;
+mod history;
 mod launch;
 mod listening;
 mod media_keys;
@@ -35,6 +36,7 @@ fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     )
     .map_err(|_| "Settings database setup failed")?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS notes(asin TEXT NOT NULL, position REAL NOT NULL, text TEXT NOT NULL); CREATE TABLE IF NOT EXISTS books(asin TEXT PRIMARY KEY, metadata TEXT NOT NULL); CREATE TABLE IF NOT EXISTS playback_positions(asin TEXT PRIMARY KEY,position REAL NOT NULL,updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS cloud_positions(asin TEXT PRIMARY KEY,position REAL NOT NULL,checked INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS official_launches(asin TEXT PRIMARY KEY,url TEXT NOT NULL);").map_err(|_|"Database setup failed")?;
+    history::schema(&c)?;
     Ok(c)
 }
 fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -286,8 +288,9 @@ fn start_library_launch(app: &tauri::AppHandle) {
         let _ = w.eval(format!("({})(...{args});", include_str!("launch.js")));
     }
 }
-async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
-    metadata::require_account(app)?;
+fn open(app: &tauri::AppHandle, url: url::Url, expected_generation:Option<u64>) -> Result<(), String> {
+    let generation=expected_generation.unwrap_or(metadata::account_generation(app)?);
+    metadata::with_account_generation(app,generation,||Ok(()))?;
     let _ = app.emit_to("main", "playback-login-status", "Using the remembered local website session. Audible may require sign-in if it has expired.");
     if let Some(w) = app.get_webview_window("official") {
         w.navigate(url).map_err(|_| "Navigation failed")?;
@@ -298,6 +301,7 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
     let handle = app.clone();
     let page_handle = app.clone();
     let popup_handle = app.clone();
+    let instance=launch::next_instance(app);
     // Both account sign-in and official playback share this local browser profile.
     let official=WebviewWindowBuilder::new(app, "official", WebviewUrl::External(url))
         .title("Official Audible · remembered local session")
@@ -307,10 +311,10 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
         .on_new_window(move |url, _| {
             // Listen now can use window.open. Keep it in the existing profile
             // rather than losing the action or creating an unauthenticated view.
-            if metadata::connected(&popup_handle) && allowed(&url) {
+            if playback_session_current(&popup_handle,generation,instance) && allowed(&url) {
                 let app = popup_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if !metadata::connected(&app) { return; }
+                    if !playback_session_current(&app,generation,instance) { return; }
                     if let Some(w) = app.get_webview_window("official") {
                         let _ = w.navigate(url);
                         let _ = w.show();
@@ -324,6 +328,7 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
         .initialization_script(include_str!("bridge.js"))
         .initialization_script(include_str!("library_ready.js"))
         .on_page_load(move |_, payload| {
+            if !playback_session_current(&page_handle,generation,instance){return;}
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
                 && allowed(payload.url()) && payload.url().path().starts_with("/ap/") {
                 let _ = page_handle.emit_to("main", "playback-login-status", "Audible/Amazon requested sign-in or verification. This website session will be remembered locally.");
@@ -346,6 +351,7 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
             );
         })
         .on_navigation(move |u| {
+            if !playback_session_current(&handle,generation,instance){return false;}
             if !metadata::connected(&handle) { return false; }
             if u.scheme() == "audible-launch" {
                 let from_library = handle.get_webview_window("official").and_then(|w| w.url().ok())
@@ -437,9 +443,14 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
                                 }
                                 launch::observe(&handle, &v);
                                 desktop::record(&handle, &v);
-                                activity::observe(&handle, &v);
+                                let held=history::guard_start(&handle,&v);
+                                if let Some(w)=handle.get_webview_window("official") { let _=w.eval(format!("window.__audibleAdapter?.hold({held});")); }
+                                if !held {
+                                    activity::observe(&handle, &v);
+                                    history::settled(&handle,&v);
+                                }
                                 listening::observe(&handle, &v);
-                                match handle.state::<start_playback::StartPlayback>().update(&v.asin,v.available,v.sample,v.paused) {
+                                match handle.state::<start_playback::StartPlayback>().update(&v.asin,v.available,v.sample,v.paused,held) {
                                     Some(start_playback::Action::Play)=>{
                                         if let Some(w)=handle.get_webview_window("official") {
                                             let _=w.eval("window.__audibleAdapter?.command('play',0);");
@@ -454,6 +465,10 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
                                                 else {let _=app.emit_to("main","official-status","Playing in the mini player");}
                                             }
                                         });
+                                    },
+                                    Some(start_playback::Action::Review)=>{
+                                        let app=handle.clone();
+                                        tauri::async_runtime::spawn(async move { if let Err(e)=desktop::enter_mini_player(app.clone()).await { let _=app.emit_to("main","official-status",e); } });
                                     },
                                     None=>{}
                                 }
@@ -480,9 +495,13 @@ async fn open(app: &tauri::AppHandle, url: url::Url) -> Result<(), String> {
         })
         .build()
         .map_err(|_| "Cannot open official player")?;
+    if !playback_session_current(app,generation,instance){let _=official.destroy();return Err("Account changed; playback opening canceled.".into());}
     privacy::harden_view(&official)?;
 
     Ok(())
+}
+fn playback_session_current(app:&tauri::AppHandle,generation:u64,instance:u64)->bool{
+    launch::active_instance(app,instance)&&metadata::account_generation(app).is_ok_and(|g|g==generation)
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -526,8 +545,8 @@ async fn open_login(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Resu
     open(
         &app,
         url::Url::parse("https://www.audible.com/library/titles").unwrap(),
+        None,
     )
-    .await
 }
 #[tauri::command]
 async fn open_player(
@@ -540,7 +559,10 @@ async fn open_player(
     if !valid_asin(&asin) || asin.starts_with("DEMO") {
         return Err("Choose an owned title from your library first".into());
     }
-    app.state::<start_playback::StartPlayback>().arm(&asin);
+    let generation=metadata::account_generation(&app)?;
+    let launcher=app.state::<launch::LaunchHistory>();
+    let _opening=launcher.opening.lock().await;
+    metadata::with_account_generation(&app,generation,||Ok(()))?;
     activity::set_hidden(&app, &asin, false)?;
     let already_ready = app
         .state::<desktop::PlayerHub>()
@@ -566,24 +588,43 @@ async fn open_player(
                 .and_then(|u| launch::clean_url(&u, &asin))
                 .is_some()
             {
-                return Ok(());
+                if !history::blocked(&app){app.state::<start_playback::StartPlayback>().arm(&asin);}
+                return desktop::enter_mini_player(app.clone()).await;
             }
         }
     }
+    // A previous document can still produce popup/navigation callbacks after a
+    // navigation request. Retire that instance before starting a different book.
+    if let Some(w)=app.get_webview_window("official"){
+        let _=w.eval("window.__audibleLaunchCancel?.();window.__audibleAdapter?.hold(true);document.querySelectorAll('audio,video').forEach(m=>m.pause());");
+        history::flush(&app,"switch")?;
+        activity::finish(&app);
+        metadata::with_account_generation(&app,generation,||{
+            launch::next_instance(&app);
+            w.destroy().map_err(|_|"Cannot close the previous playback window".into())
+        })?;
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(3);
+        while app.get_webview_window("official").is_some(){
+            if std::time::Instant::now()>=deadline{return Err("The previous player is still closing. Wait a moment and try again.".into());}
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        }
+    }
+    metadata::with_account_generation(&app,generation,||Ok(()))?;
+    history::prepare(&app,&asin,generation)?;
+    activity::finish(&app);
+    app.state::<start_playback::StartPlayback>().arm(&asin);
     metadata::stream::invalidate(&app);
-    desktop::selected(&app, &asin)?;
+    desktop::selected_in_session(&app, &asin, generation)?;
+    let target=metadata::with_account_generation(&app,generation,||{
     *app.state::<OfficialLaunch>()
         .0
         .lock()
         .map_err(|_| "Playback launch unavailable")? = Some(asin.clone());
     let remembered = launch::remembered(&app, &asin);
     launch::selecting(&app, &asin, remembered.is_some());
-    open(
-        &app,
-        remembered
-            .unwrap_or_else(|| url::Url::parse("https://www.audible.com/library/titles").unwrap()),
-    )
-    .await
+    Ok(remembered.unwrap_or_else(|| url::Url::parse("https://www.audible.com/library/titles").unwrap()))
+    })?;
+    open(&app,target,Some(generation))
 }
 #[tauri::command]
 fn player_command(
@@ -603,6 +644,9 @@ pub(crate) fn send_player_command(
     metadata::require_account(&app)?;
     if !value.is_finite() {
         return Err("Invalid value".into());
+    }
+    if history::blocked(&app) && matches!(action.as_str(),"play"|"seek"|"recover") {
+        return Err("Choose a saved position in Listening history before continuing.".into());
     }
     if ![
         "play",
@@ -706,6 +750,7 @@ fn select_chapter(
 ) -> Result<(), String> {
     desktop::player_local(&window)?;
     metadata::require_account(&app)?;
+    if history::blocked(&app){return Err("Choose a saved position before selecting a chapter.".into());}
     if !position.is_finite()
         || !(0.0..31_536_000.0).contains(&position)
         || title.is_empty()
@@ -737,6 +782,7 @@ async fn end_session(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Res
     clear_official_session(&app)
 }
 pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), String> {
+    launch::next_instance(app);
     listening::cancel_sleep(app);
     app.state::<start_playback::StartPlayback>().cancel();
     *app.state::<OfficialLaunch>()
@@ -824,6 +870,7 @@ fn main() {
         .manage(start_playback::StartPlayback::new())
         .manage(listening::Listening::new())
         .manage(activity::Activity::new())
+        .manage(history::History::default())
         .manage(shortcuts::Shortcuts::new())
         .invoke_handler(tauri::generate_handler![
             privacy::privacy_status,
@@ -882,6 +929,9 @@ fn main() {
             desktop::close_mini_player,
             desktop::current_player,
             player_sync::resync_player,
+            history::listening_history,
+            history::accept_audible_position,
+            history::restore_listening_position,
             cover::open_cover,
             cover::current_cover,
             cover::close_cover,

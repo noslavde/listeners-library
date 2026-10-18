@@ -45,6 +45,10 @@ pub fn changed(window: &tauri::Window, event: &WindowEvent) {
             }
         }
         WindowEvent::CloseRequested { .. } => {
+            if window.label()=="main" && crate::metadata::connected(window.app_handle()) {
+                if let Err(e)=crate::history::flush(window.app_handle(),"close"){eprintln!("{e}");}
+                crate::activity::finish(window.app_handle());
+            }
             if window.label() == "mini-player" {
                 let hub = window.app_handle().state::<crate::desktop::PlayerHub>();
                 if let Ok(_state) = hub.0.lock() {

@@ -1,6 +1,7 @@
 // No Tauri IPC is granted to this remote page. This bridge only reports media state.
 (()=>{if(location.protocol!=='https:'||!['www.audible.com','audible.com'].includes(location.hostname)||location.pathname!=='/webplayer')return;
-let media,last=0,recovery=0,pausedAt=0,rewind=5,pauseChapter=false,chapter='',intentUntil=0,chapterStarts=[],configuredMedia,configuredSpeed;
+let media,last=0,recovery=0,pausedAt=0,rewind=5,pauseChapter=false,chapter='',intentUntil=0,chapterStarts=[],configuredMedia,configuredSpeed,resumeHold=true;
+document.addEventListener?.('play',e=>{if(resumeHold&&e.target?.pause)e.target.pause();},true);
 const ranges=r=>{const result=[];for(let i=0;i<Math.min(r.length,64);i++){const start=r.start(i),end=r.end(i);if(Number.isFinite(start)&&Number.isFinite(end)&&start>=0&&end>=start)result.push({start,end});}return result;};
 const find=()=>{const elements=[...document.querySelectorAll('audio,video')];const playing=elements.find(m=>!m.paused&&!m.ended&&m.readyState>0);if(playing)return playing;if(media&&elements.includes(media)&&media.readyState>0)return media;return elements.filter(m=>Number.isFinite(m.duration)&&m.duration>0).sort((a,b)=>b.duration-a.duration)[0]??elements[0];};
 const error=code=>{location.href='audible-control://error?code='+encodeURIComponent(code);};
@@ -9,20 +10,21 @@ const normalize=s=>(s??'').replace(/\s+/g,' ').trim().toLocaleLowerCase();
 const visible=e=>e.getClientRects().length>0&&e.getAttribute('aria-hidden')!=='true';
 const chapterMatch=title=>{const matches=[];for(const scope of document.querySelectorAll('[role="dialog"],[aria-label*="chapter" i],[data-testid*="chapter" i],[class*="chapter" i],[id*="chapter" i]')){if(!visible(scope))continue;for(const e of scope.querySelectorAll('button,[role="button"],[role="option"],a,li,span,div')){if(!visible(e)||e.disabled||e.getAttribute('aria-disabled')==='true')continue;if(normalize(e.textContent)!==normalize(title)&&normalize(e.getAttribute('aria-label'))!==normalize(title))continue;const target=e.closest('button,[role="button"],[role="option"],a,li')??e;if(!matches.includes(target))matches.push(target);}}return matches;};
 const chooseChapter=({position,title})=>{intentUntil=Date.now()+5000;const tryClick=()=>{const matches=chapterMatch(title);if(matches.length===1){matches[0].click();return true;}if(matches.length>1){error('chapter_ambiguous');return true;}return false;};if(tryClick())return;const toggle=[...document.querySelectorAll('button,[role="button"]')].filter(e=>visible(e)&&!e.disabled&&['chapters','chapter list','table of contents'].includes(normalize(e.getAttribute('aria-label')||e.textContent)));if(toggle.length===1){toggle[0].click();let attempts=0;const retry=()=>{if(tryClick())return;if(++attempts<5)setTimeout(retry,150);else error('chapter_unavailable');};setTimeout(retry,150);return;}const m=find();if(m&&ranges(m.seekable).some(r=>position>=r.start&&position<=r.end)){seek(m,position);return;}error('chapter_unavailable');};
-window.__audibleAdapter={chapter:chooseChapter,configure(config){
+window.__audibleAdapter={hold(value){const next=!!value;if(resumeHold&&!next)pausedAt=0;resumeHold=next;if(next)find()?.pause();},chapter:chooseChapter,configure(config){
  const m=find();if(!m)return;
  if(Number.isFinite(config.speed)&&config.speed>=.5&&config.speed<=3&&(m!==configuredMedia||configuredSpeed!==config.speed)){m.playbackRate=config.speed;configuredSpeed=config.speed;configuredMedia=m;}
  rewind=Math.max(0,Math.min(30,config.rewind));pauseChapter=!!config.pauseChapter;
  chapterStarts=Array.isArray(config.chapters)?config.chapters.filter(v=>Number.isFinite(v)&&v>=0).sort((a,b)=>a-b):[];
  window.__audibleVolume?.apply(m,Number.isFinite(config.volume)?config.volume:1);
 },command(action,value){const m=find();if(!m)return;intentUntil=Date.now()+2000;
-if(action==='play'){if(pausedAt&&Date.now()-pausedAt>60000)seek(m,Math.max(0,m.currentTime-rewind));m.play().catch(()=>error('play_blocked'));}
+if(action==='play'&&!resumeHold){if(pausedAt&&Date.now()-pausedAt>60000)seek(m,Math.max(0,m.currentTime-rewind));m.play().catch(()=>error('play_blocked'));}
 if(action==='pause')m.pause();if(action==='seek')seek(m,value);
 if(action==='volume')window.__audibleVolume?.apply(m,value,true);
 if(action==='speed')m.playbackRate=value;if(action==='pauseChapter')pauseChapter=!!value;if(action==='rewind')rewind=Math.max(0,Math.min(30,value));if(action==='recover')seek(m,recovery);
 }};
 setInterval(()=>{const m=find();if(m!==media){media=m;last=m?.currentTime??0;recovery=last;if(m)m.addEventListener('pause',()=>pausedAt=Date.now());}
 if(m){
+if(resumeHold&&!m.paused)m.pause();
 const natural=Date.now()>intentUntil&&!m.seeking&&m.currentTime>=last&&m.currentTime-last<=20;
 if(pauseChapter&&natural&&chapterStarts.some(start=>start>last&&start<=m.currentTime))m.pause();
 if(Date.now()>intentUntil&&Math.abs(m.currentTime-last)>20)recovery=last;last=m.currentTime;

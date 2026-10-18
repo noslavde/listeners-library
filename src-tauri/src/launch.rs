@@ -1,6 +1,14 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+};
 use tauri::{Emitter, Manager};
 pub struct LaunchHistory {
+    instance: AtomicU64,
+    pub(crate) opening: tokio::sync::Mutex<()>,
     urls: Mutex<HashMap<String, String>>,
     reused: Mutex<Option<String>>,
     searches: Mutex<std::collections::HashSet<String>>,
@@ -8,11 +16,22 @@ pub struct LaunchHistory {
 impl LaunchHistory {
     pub fn new() -> Self {
         Self {
+            instance: AtomicU64::new(0),
+            opening: tokio::sync::Mutex::new(()),
             urls: Mutex::new(HashMap::new()),
             reused: Mutex::new(None),
             searches: Mutex::new(std::collections::HashSet::new()),
         }
     }
+}
+pub(crate) fn next_instance(app: &tauri::AppHandle) -> u64 {
+    app.state::<LaunchHistory>()
+        .instance
+        .fetch_add(1, Ordering::SeqCst)
+        + 1
+}
+pub(crate) fn active_instance(app: &tauri::AppHandle, id: u64) -> bool {
+    app.state::<LaunchHistory>().instance.load(Ordering::SeqCst) == id
 }
 pub fn clean_url(url: &url::Url, asin: &str) -> Option<url::Url> {
     if !super::allowed(url)
@@ -82,6 +101,10 @@ pub fn searched(app: &tauri::AppHandle, asin: &str) {
     }
 }
 pub fn observe(app: &tauri::AppHandle, state: &super::PlayerState) {
+    let Ok(generation) = super::metadata::account_generation(app) else {
+        return;
+    };
+    let key = format!("{generation}:{}", state.asin);
     let history = app.state::<LaunchHistory>();
     if state.sample {
         let fallback = history.reused.lock().ok().and_then(|mut p| {
@@ -92,15 +115,37 @@ pub fn observe(app: &tauri::AppHandle, state: &super::PlayerState) {
             }
         });
         if let Some(asin) = fallback {
+            let instance = history.instance.load(Ordering::SeqCst);
             if let Ok(mut urls) = history.urls.lock() {
-                urls.remove(&asin);
+                urls.remove(&key);
             }
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Ok(db) = super::db(&app) {
-                    let _ = db.execute("DELETE FROM official_launches WHERE asin=?1", [&asin]);
+                if super::metadata::with_account_db(&app, generation, |db| {
+                    db.execute("DELETE FROM official_launches WHERE asin=?1", [&asin])
+                        .map(|_| ())
+                        .map_err(|_| "Cannot reset saved player launch".into())
+                })
+                .is_err()
+                {
+                    return;
                 }
                 if let Some(w) = app.get_webview_window("official") {
+                    let matching = app
+                        .state::<super::desktop::PlayerHub>()
+                        .0
+                        .lock()
+                        .map(|hub| {
+                            hub.book.as_ref().and_then(|b| b["asin"].as_str())
+                                == Some(asin.as_str())
+                        })
+                        .unwrap_or(false);
+                    if !matching
+                        || !active_instance(&app, instance)
+                        || !super::metadata::account_generation(&app).is_ok_and(|g| g == generation)
+                    {
+                        return;
+                    }
                     let _ = w.navigate(
                         url::Url::parse("https://www.audible.com/library/titles").unwrap(),
                     );
@@ -136,27 +181,27 @@ pub fn observe(app: &tauri::AppHandle, state: &super::PlayerState) {
     let Ok(mut urls) = history.urls.lock() else {
         return;
     };
-    if urls.get(&state.asin) == Some(&url.to_string()) {
+    if urls.get(&key) == Some(&url.to_string()) {
         return;
     }
-    urls.insert(state.asin.clone(), url.to_string());
+    urls.insert(key, url.to_string());
     let app = app.clone();
     let asin = state.asin.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if let Ok(db) = super::db(&app) {
-            if db
-                .execute(
-                    "INSERT OR REPLACE INTO official_launches(asin,url) VALUES(?1,?2)",
-                    rusqlite::params![asin, url.as_str()],
-                )
-                .is_ok()
-            {
-                let _ = app.emit_to(
-                    "main",
-                    "official-status",
-                    "Title launch remembered locally; Listen can now reopen this book directly",
-                );
-            }
+        if super::metadata::with_account_db(&app, generation, |db| {
+            db.execute(
+                "INSERT OR REPLACE INTO official_launches(asin,url) VALUES(?1,?2)",
+                rusqlite::params![asin, url.as_str()],
+            )
+            .map_err(|_| "Cannot remember playback launch".into())
+        })
+        .is_ok()
+        {
+            let _ = app.emit_to(
+                "main",
+                "official-status",
+                "Title launch remembered locally; Listen can now reopen this book directly",
+            );
         }
     });
 }
