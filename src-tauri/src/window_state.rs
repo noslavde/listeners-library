@@ -46,6 +46,11 @@ pub fn changed(window: &tauri::Window, event: &WindowEvent) {
         }
         WindowEvent::CloseRequested { .. } => {
             if window.label() == "mini-player" {
+                let hub = window.app_handle().state::<crate::desktop::PlayerHub>();
+                if let Ok(_state) = hub.0.lock() {
+                    hub.changed();
+                }
+                crate::cover::dismiss(window.app_handle());
                 window
                     .app_handle()
                     .state::<crate::start_playback::StartPlayback>()

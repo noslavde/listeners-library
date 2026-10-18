@@ -1195,6 +1195,21 @@ fn annotation_position(v: &Value, asin: &str) -> Option<f64> {
         .or_else(|| v.get(asin))
         .and_then(position_from)
 }
+// A manual device handoff must use a fresh account response, never the local
+// checkpoint or a chapter metadata fallback that may describe an older session.
+pub(crate) async fn latest_position(
+    app: &tauri::AppHandle,
+    asin: &str,
+    generation: u64,
+) -> Result<f64, String> {
+    with_account_generation(app, generation, || Ok(()))?;
+    let response = get(app, "/1.0/annotations/lastpositions", &[("asins", asin)]).await?;
+    with_account_generation(app, generation, || {
+        let position = annotation_position(&response, asin).ok_or("Audible has not returned a saved position for this book. Pause on your other device, wait for it to sync, then try again.")?;
+        save_cloud_position(app, asin, position)?;
+        Ok(position)
+    })
+}
 fn walk_chapters(rows: &Value, depth: usize, out: &mut Vec<Chapter>) {
     if depth > 16 || out.len() >= 2000 {
         return;

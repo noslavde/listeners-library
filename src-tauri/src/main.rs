@@ -9,6 +9,7 @@ mod media_keys;
 mod metadata;
 mod notes;
 mod privacy;
+mod player_sync;
 mod protection;
 mod shortcuts;
 mod start_playback;
@@ -690,6 +691,9 @@ pub(crate) fn send_player_command(
         )?,
         _ => (),
     }
+    let hub = app.state::<desktop::PlayerHub>();
+    let _state = hub.0.lock().map_err(|_| "Player state unavailable")?;
+    hub.changed();
     w.eval(format!("window.__audibleAdapter?.command({a},{value});"))
         .map_err(|_| "Player command failed".into())
 }
@@ -721,6 +725,9 @@ fn select_chapter(
     }
     let args = serde_json::to_string(&serde_json::json!({"position":position,"title":title}))
         .map_err(|_| "Cannot encode chapter")?;
+    let hub = app.state::<desktop::PlayerHub>();
+    let _state = hub.0.lock().map_err(|_| "Player state unavailable")?;
+    hub.changed();
     w.eval(format!("window.__audibleAdapter?.chapter({args});"))
         .map_err(|_| "Cannot send chapter selection".into())
 }
@@ -874,6 +881,10 @@ fn main() {
             desktop::drag_mini_player,
             desktop::close_mini_player,
             desktop::current_player,
+            player_sync::resync_player,
+            cover::open_cover,
+            cover::current_cover,
+            cover::close_cover,
             desktop::official_visibility,
             desktop::show_library,
             desktop::local_position,

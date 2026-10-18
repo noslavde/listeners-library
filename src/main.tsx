@@ -18,6 +18,7 @@ import {
 import { desktop, DemoAdapter, OfficialAdapter, type Action } from "./playback";
 import "./style.css";
 import { MiniPlayer } from "./MiniPlayer";
+import { CoverArtwork } from "./CoverArtwork";
 import { MetadataPanel } from "./MetadataPanel";
 import { ListeningControls, useListening } from "./listening";
 import { ContinueShelf, useLibraryActivity } from "./LibraryShelf";
@@ -446,7 +447,7 @@ function App() {
       <details className="app-details">
         <summary>About & privacy</summary>
         <p>
-          Listener’s Library · Version 0.2.1 · Beta. Unofficial and unaffiliated
+          Listener’s Library · Version 0.2.2 · Beta. Unofficial and unaffiliated
           with Audible or Amazon. Currently supports the US marketplace.
         </p>
         <p>
@@ -613,11 +614,17 @@ applyTheme(cachedTheme());
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ThemeManager />
-      {new URLSearchParams(location.search).get("mini") === "1" ? (
-        <MiniPlayer />
+      {new URLSearchParams(location.search).get("cover") === "1" ? (
+        <CoverArtwork />
       ) : (
-        <App />
+        <>
+          <ThemeManager />
+          {new URLSearchParams(location.search).get("mini") === "1" ? (
+            <MiniPlayer />
+          ) : (
+            <App />
+          )}
+        </>
       )}
     </ErrorBoundary>
   </React.StrictMode>,

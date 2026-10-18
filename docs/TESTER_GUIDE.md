@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.1 beta
+# Getting started with Listener’s Library 0.2.2 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -19,7 +19,8 @@ You can browse another series without interrupting playback. **Explore** groups 
 
 ## Controls and notes
 
-- Mini player: play/pause, 15-second skips, seek bar, speed and app volume. **Chapters**, **Sleep** and **More** reveal additional controls.
+- Mini player: play/pause, 15-second skips, seek bar, speed and app volume. The current chapter appears above the timeline; its arrows go to the previous/next chapter. **Chapters** keeps the full dropdown, while **Sleep** and **More** reveal additional controls.
+- Click the small book cover to open a larger, resizable artwork window. Close it with **Close ×**, the window's X or Escape; playback continues. Drag the title/author area to move the mini player.
 - In the app: Space plays/pauses; Left/Right skip; B saves a bookmark; M switches mini player/library. These shortcuts leave focused inputs and buttons alone.
 - Elsewhere in Windows: Ctrl+Alt+Space, Ctrl+Alt+Left/Right, Ctrl+Alt+B and Ctrl+Alt+M. Other apps may occupy a shortcut. Headset/media keys also work when Windows selects this app's media session.
 - Open **Notes & backups** in the library. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
@@ -29,7 +30,9 @@ You can browse another series without interrupting playback. **Explore** groups 
 
 Audible's official player handles account progress. The companion also saves checkpoints on this PC. A cloud check time is not the time you last listened. If saved positions differ, the card shows both rather than declaring one newer. Starting a book uses the official player's resume behavior; it does not force the card's local checkpoint.
 
-To choose a different checkpoint, open **Playback help & options → Saved progress**, refresh, then choose **Resume on this PC** or **Resume Audible position**. Cross-device updates may take time. Check the chapter and time before continuing if the two disagree.
+When returning from mobile, pause there and allow Audible to save progress, then press **Sync position** in the mini player. This fetches Audible's saved position for the playing book and moves to it, forward or backward, preserving play/pause. It reports success after the official player's timeline reaches that position. If no position is available, the timeline does not fit, or loading prevents a seek, it explains the problem without guessing. Changing books or using playback controls during the check cancels it. The app does not automatically jump after idle: Audible's reported position may still be stale, so check the chapter/time before resuming.
+
+To choose a local checkpoint instead, open **Playback help & options → Saved progress**, refresh, then choose **Resume on this PC** or **Resume Audible position**. Cross-device updates may take time.
 
 ## When something does not work
 

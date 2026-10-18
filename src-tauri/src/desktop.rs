@@ -2,7 +2,10 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -12,8 +15,14 @@ pub struct NowPlaying {
     pub snapshot: Option<super::PlayerState>,
     pub last_seen: Option<u64>,
 }
-pub struct PlayerHub(pub Mutex<NowPlaying>, Mutex<u64>);
+pub struct PlayerHub(pub Mutex<NowPlaying>, Mutex<u64>, AtomicU64);
 impl PlayerHub {
+    pub(crate) fn revision(&self) -> u64 {
+        self.2.load(Ordering::SeqCst)
+    }
+    pub(crate) fn changed(&self) -> u64 {
+        self.2.fetch_add(1, Ordering::SeqCst) + 1
+    }
     pub fn new() -> Self {
         Self(
             Mutex::new(NowPlaying {
@@ -22,24 +31,27 @@ impl PlayerHub {
                 last_seen: None,
             }),
             Mutex::new(0),
+            AtomicU64::new(0),
         )
     }
 }
 pub(crate) fn reset_player(app: &tauri::AppHandle) -> Result<(), String> {
+    super::cover::dismiss(app);
     super::activity::reset(app);
     super::listening::cancel_sleep(app);
     app.state::<super::start_playback::StartPlayback>().cancel();
     if let Some(w) = app.get_webview_window("official") {
         let _ = w.eval("document.querySelectorAll('audio,video').forEach(media=>{media.pause();media.muted=true;});");
     }
-    *app.state::<PlayerHub>()
-        .0
-        .lock()
-        .map_err(|_| "Player state unavailable")? = NowPlaying {
+    let hub = app.state::<PlayerHub>();
+    let mut state = hub.0.lock().map_err(|_| "Player state unavailable")?;
+    hub.changed();
+    *state = NowPlaying {
         book: None,
         snapshot: None,
         last_seen: None,
     };
+    drop(state);
     super::media_keys::refresh(app);
     if let Some(w) = app.get_webview_window("mini-player") {
         w.destroy().map_err(|_| "Cannot close mini player")?;
@@ -74,6 +86,7 @@ pub fn select_api_title(
 }
 pub fn selected(app: &tauri::AppHandle, asin: &str) -> Result<(), String> {
     super::metadata::require_account(app)?;
+    super::cover::dismiss(app);
     super::listening::cancel_sleep(app);
     let c = super::db(app)?;
     let raw = c
@@ -83,11 +96,14 @@ pub fn selected(app: &tauri::AppHandle, asin: &str) -> Result<(), String> {
         .ok();
     let book=raw.and_then(|s|serde_json::from_str::<Value>(&s).ok()).unwrap_or_else(||json!({"asin":asin,"title":"Audible title","author":"","series":"","volume":0,"duration":0,"chapters":[]}));
     let state = app.state::<PlayerHub>();
-    *state.0.lock().map_err(|_| "Player state unavailable")? = NowPlaying {
+    let mut current = state.0.lock().map_err(|_| "Player state unavailable")?;
+    state.changed();
+    *current = NowPlaying {
         book: Some(book.clone()),
         snapshot: None,
         last_seen: None,
     };
+    drop(current);
     *state.1.lock().map_err(|_| "Player state unavailable")? = 0;
     for label in ["main", "mini-player"] {
         let _ = app.emit_to(label, "player-book", book.clone());
@@ -245,7 +261,7 @@ pub(crate) async fn enter_mini_player(app: tauri::AppHandle) -> Result<(), Strin
         "mini-player",
         WebviewUrl::App("index.html?mini=1".into()),
     )
-    .title("Audible · mini player")
+    .title("Listener’s Library · mini player")
     .inner_size(380.0, 240.0)
     .min_inner_size(340.0, 220.0)
     .always_on_top(true)
@@ -346,6 +362,7 @@ pub async fn close_mini_player(
     if window.label() != "mini-player" {
         return Err("Mini player required".into());
     }
+    super::cover::dismiss(&app);
     show_library(app, window.clone()).await?;
     window
         .close()
