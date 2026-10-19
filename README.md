@@ -22,6 +22,8 @@ Private repositories require GitHub access even to download releases. Source is 
 
 See [Getting started & troubleshooting](docs/TESTER_GUIDE.md) for notes, progress, shortcuts, updating and removal.
 
+In the 0.2.4 local test build, closing the main library exits the app; closing the mini player returns to the library. There is no tray mode. Launching the shortcut again restores the existing library. **Troubleshooting & diagnostic report** offers a small report to review and save yourself, with no automatic uploads or account/book content. See [close/reopen tests](docs/LIFECYCLE_TEST.md).
+
 ## Your data
 
 Account tokens and local library/notes are protected on this Windows account. Website sign-in uses a separate local browser profile. No app analytics or crash uploader is added; Audible's official pages still contact their own services. This is not an independently audited product. Read [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md).

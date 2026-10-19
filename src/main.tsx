@@ -32,6 +32,8 @@ import { applyTheme, cachedTheme } from "./themes";
 import { ExploreNav } from "./ExploreNav";
 import { VolumeControl } from "./VolumeControl";
 import { PrivacyPanel } from "./PrivacyPanel";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
+import { installErrorReporting } from "./diagnostics";
 
 import { ResumePanel } from "./ResumePanel";
 import { ChapterSelect } from "./ChapterSelect";
@@ -459,6 +461,7 @@ function App() {
         {cardProgress.status && <p role="status">{cardProgress.status}</p>}
       </details>
       <PrivacyPanel />
+      <DiagnosticsPanel />
       <details className="app-details">
         <summary>About & privacy</summary>
         <p>
@@ -626,6 +629,7 @@ function format(n: number) {
   return `${Math.floor(n / 3600)}:${String(Math.floor(n / 60) % 60).padStart(2, "0")}:${String(Math.floor(n) % 60).padStart(2, "0")}`;
 }
 applyTheme(cachedTheme());
+installErrorReporting();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>

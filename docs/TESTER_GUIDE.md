@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.3 beta
+# Getting started with Listener’s Library 0.2.4 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -67,6 +67,10 @@ If Amazon omits a stable account identity, the app warns that a later sign-in ma
 **Privacy & local storage → Erase local app data** permanently removes retained files after confirmation and restart. Export notes first if needed. This does not remove existing exports/backups or purchases from Audible. Use Windows Settings → Apps → Installed apps to uninstall. Uninstalling alone should not be treated as signing out or erasing retained personal data.
 
 ## Reporting a problem
+
+For an app crash, invisible window or reopening problem, open **Troubleshooting & diagnostic report**, review the report and save the JSON if you want to share it. It excludes account/book information and raw errors; nothing uploads automatically. Save it before repeated restarts replace older events. An “unclean” session is not proof of a crash. See [close/reopen checks](LIFECYCLE_TEST.md).
+
+Closing the main library exits playback and the app. There is no system-tray mode. Closing the mini player returns to the library and keeps audio playing. Launching the shortcut again restores the running library. If an older version is stuck invisibly, end **listeners-library.exe** in Task Manager before upgrading; keep its protected data and encryption key.
 
 Use the repository's Issues page with the app version (About & privacy), Windows version, steps, expected result and visible message. If sign-in fails, the app's **Sign-in diagnostic** contains limited connection stages and can help. Never share passwords, MFA codes, cookies, signed-in URLs, account files, encryption keys or full browser logs. For a potential security issue, follow SECURITY.md rather than posting details publicly.
 

@@ -3,8 +3,10 @@ mod activity;
 mod cover;
 mod current_book;
 mod desktop;
+mod diagnostics;
 mod history;
 mod launch;
+mod lifecycle;
 mod listening;
 mod media_keys;
 mod metadata;
@@ -840,12 +842,21 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
     Ok(())
 }
 fn main() {
+    diagnostics::install_panic_hook();
+    let instance = match lifecycle::Instance::acquire() {
+        Ok(Some(instance)) => instance,
+        Ok(None) => return,
+        Err(_) => { startup_error(); return; }
+    };
     if let Err(error) = tauri::Builder::default()
         .plugin(window_state::plugin())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
+            let result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let root = app.path().app_local_data_dir()?;
             privacy::apply_pending_reset(&root)?;
+            diagnostics::initialize(&root)?;
+            diagnostics::record(diagnostics::Code::OpeningProtectedStorage);
             app.manage(storage::Storage::initialize(
                 &root,
                 !cfg!(debug_assertions)
@@ -853,13 +864,24 @@ fn main() {
                         .join(format!("{}.no-legacy-import", storage::SCOPE))
                         .exists(),
             )?);
+            diagnostics::record(diagnostics::Code::RestoringAccount);
             app.manage(metadata::MetadataState::new(app.handle()));
+            diagnostics::record(diagnostics::Code::StartingServices);
             privacy::setup(app)?;
             window_state::setup(app)?;
             listening::setup(app)?;
             media_keys::setup(app);
             shortcuts::setup(app);
+            instance.listen(app.handle().clone())?;
+            lifecycle::restore(app.handle());
+            diagnostics::record(diagnostics::Code::StartupReady);
             Ok(())
+            })();
+            if result.is_err() {
+                diagnostics::record(diagnostics::Code::StartupFailed);
+                startup_error();
+            }
+            result
         })
         .on_window_event(window_state::changed)
         .manage(metadata::stream::StreamState::new())
@@ -873,6 +895,9 @@ fn main() {
         .manage(history::History::default())
         .manage(shortcuts::Shortcuts::new())
         .invoke_handler(tauri::generate_handler![
+            diagnostics::diagnostic_report,
+            diagnostics::record_ui_error,
+            diagnostics::export_diagnostics,
             privacy::privacy_status,
             privacy::set_website_privacy,
             privacy::erase_local_data,
@@ -955,11 +980,25 @@ fn main() {
             import_library,
             load_library
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
+        .map(|app| app.run(|app, event| match event {
+            tauri::RunEvent::Ready => lifecycle::restore(app),
+            tauri::RunEvent::ExitRequested { .. } => lifecycle::prepare_exit(app),
+            tauri::RunEvent::Exit => diagnostics::record(diagnostics::Code::CleanExit),
+            _ => {}
+        }))
     {
+        let _ = error;
+        diagnostics::record(diagnostics::Code::StartupFailed);
+        startup_error();
+    }
+}
+fn startup_error() {
+        static SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if SHOWN.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
         use windows::core::{w, PCWSTR};
         use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-        let text:Vec<u16>=format!("Listener’s Library could not start. Close other copies and retry. Do not delete the database key.\n\n{error}").encode_utf16().chain(Some(0)).collect();
+        let text:Vec<u16>="Listener’s Library could not start. Close older copies in Task Manager and retry. Your saved data has not been reset; do not delete the database key. A diagnostic event may be available under Troubleshooting after a successful restart.".encode_utf16().chain(Some(0)).collect();
         unsafe {
             MessageBoxW(
                 None,
@@ -968,7 +1007,6 @@ fn main() {
                 MB_OK | MB_ICONERROR,
             );
         }
-    }
 }
 #[cfg(test)]
 mod tests {

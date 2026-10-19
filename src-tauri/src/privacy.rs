@@ -140,6 +140,7 @@ pub fn apply_pending_reset(root: &Path) -> Result<(), String> {
     .map_err(|_| "Cannot save data-removal state")?;
     if mode == "all" {
         retry_remove(&root.join(crate::storage::SCOPE))?;
+        retry_remove(&root.join(format!("diagnostics-{}", crate::storage::SCOPE)))?;
     }
     if !cfg!(debug_assertions) {
         #[cfg(not(test))]

@@ -134,7 +134,7 @@ fn change(
     Ok(())
 }
 
-fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::{fs, fs::OpenOptions, io::Write};
     crate::storage::reject_link(path)?;
     let parent = path.parent().ok_or("Choose a local file")?;

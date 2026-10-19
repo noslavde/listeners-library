@@ -2,7 +2,7 @@ use std::{sync::mpsc, time::Duration};
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
-const FLAGS: StateFlags = StateFlags::SIZE
+pub(crate) const FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
 
@@ -44,12 +44,17 @@ pub fn changed(window: &tauri::Window, event: &WindowEvent) {
                 let _ = checkpoint.0.send(());
             }
         }
-        WindowEvent::CloseRequested { .. } => {
-            if window.label()=="main" && crate::metadata::connected(window.app_handle()) {
-                if let Err(e)=crate::history::flush(window.app_handle(),"close"){eprintln!("{e}");}
-                crate::activity::finish(window.app_handle());
+        WindowEvent::CloseRequested { api, .. } => {
+            if window.label() == "main" {
+                api.prevent_close();
+                crate::lifecycle::prepare_exit(window.app_handle());
+                // Hidden official/player windows must not keep a headless
+                // process alive after the user closes the library.
+                window.app_handle().exit(0);
+                return;
             }
-            if window.label() == "mini-player" {
+            if window.label() == "mini-player" && !crate::lifecycle::closing() {
+                crate::diagnostics::record(crate::diagnostics::Code::MiniClosed);
                 let hub = window.app_handle().state::<crate::desktop::PlayerHub>();
                 if let Ok(_state) = hub.0.lock() {
                     hub.changed();
@@ -68,6 +73,11 @@ pub fn changed(window: &tauri::Window, event: &WindowEvent) {
             if window.app_handle().save_window_state(FLAGS).is_err() {
                 eprintln!("Could not save window placement");
             }
+        }
+        WindowEvent::Destroyed
+            if window.label() == "mini-player" && !crate::lifecycle::closing() =>
+        {
+            crate::lifecycle::restore(window.app_handle());
         }
         _ => {}
     }

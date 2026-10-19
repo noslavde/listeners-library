@@ -1,4 +1,4 @@
-# Privacy and local data — 0.2.3 beta
+# Privacy and local data — 0.2.4 beta
 
 Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or remote notes service. Audible/Amazon receive normal account and playback requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
 
@@ -29,6 +29,14 @@ Notes are not sent anywhere automatically. You can explicitly type EXPORT NOTES 
 **Remove old version data** deletes known legacy files/profile after confirmation and restart; it does not delete every current encrypted account profile. Export old notes first. **Erase local app data** removes current-scope encrypted files, key, credentials and website profile; installed builds also remove known legacy stores. Export any needed notes first. Typed confirmation and restart are required. Missing/corrupted keys never silently reset an existing database.
 
 Uninstalling alone is not signing out or an assurance of data erasure. Exports, backups, filesystem/cloud copies and forensic remnants are outside app removal. Changing Windows users, reinstalling Windows or losing its protected key may make saved data inaccessible. Do not delete the key as a troubleshooting step.
+
+## Optional diagnostic report
+
+The app keeps a small plaintext technical journal in a Windows-user-restricted diagnostics directory, separate from encrypted listening history. Up to 128 events from each of the last two sessions are retained. Fields are limited to predefined event codes, relative elapsed times, termination status, app version and architecture. There are no account identifiers, book identifiers/titles, notes, URLs, paths, machine/user names, raw exception messages, stack traces, memory dumps or tracking IDs. It is designed for sharing without personal content; no system can promise absolute anonymity from context you separately provide.
+
+**Troubleshooting & diagnostic report** lets you inspect the exact report and explicitly save it through Windows' file dialog. Nothing is uploaded automatically. Exports are readable JSON; a cloud-synced destination may upload your saved file independently. Sign-out keeps this nonsensitive journal. Erase local app data removes its previous history; restarting creates a fresh session journal. Uninstall alone may retain it.
+
+Diagnostics are best effort. They distinguish incomplete shutdown from clean exit, but cannot determine whether an incomplete session was a crash, forced stop or power failure. Some native crashes and failures before diagnostic initialization leave no error record. Saving can fail if storage is unavailable. Collect a report before repeated restarts replace older sessions.
 
 ## Security limits
 

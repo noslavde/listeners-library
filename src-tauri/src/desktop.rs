@@ -232,8 +232,10 @@ pub async fn open_mini_player(
     enter_mini_player(app).await
 }
 pub(crate) async fn enter_mini_player(app: tauri::AppHandle) -> Result<(), String> {
+    if crate::lifecycle::closing() { return Err("The app is closing".into()); }
     super::metadata::require_account(&app)?;
     if let Some(w) = app.get_webview_window("mini-player") {
+        w.unminimize().map_err(|_| "Cannot restore mini player")?;
         w.show().map_err(|_| "Cannot show mini player")?;
         w.set_focus().map_err(|_| "Cannot focus mini player")?;
         hide_ready_official(&app)?;
@@ -310,6 +312,11 @@ pub fn resize_mini_player(window: tauri::WebviewWindow, panel: String) -> Result
         .map_err(|_| "Cannot resize player".into())
 }
 fn hide_ready_official(app: &tauri::AppHandle) -> Result<(), String> {
+    if crate::lifecycle::closing() { return Err("The app is closing".into()); }
+    // Never hide the library unless its replacement is actually visible.
+    let mini = app.get_webview_window("mini-player").ok_or("Mini player closed")?;
+    mini.unminimize().map_err(|_| "Cannot restore mini player")?;
+    mini.show().map_err(|_| "Cannot show mini player")?;
     let ready = app
         .state::<PlayerHub>()
         .0
@@ -327,6 +334,7 @@ fn hide_ready_official(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(main) = app.get_webview_window("main") {
         main.hide().map_err(|_| "Cannot hide library window")?;
     }
+    crate::diagnostics::record(crate::diagnostics::Code::MiniOpened);
     Ok(())
 }
 #[tauri::command]

@@ -442,7 +442,7 @@ export function MiniPlayer() {
                 Show Audible player
               </button>
               <p className="mini-version">
-                Listener’s Library · 0.2.3 · Unofficial beta
+                Listener’s Library · 0.2.4 · Unofficial beta
               </p>
             </>
           )}

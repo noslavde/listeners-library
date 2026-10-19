@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from "react";
+import { reportUiError } from "./diagnostics";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 
 export class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -7,6 +9,9 @@ export class ErrorBoundary extends Component<
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch() {
+    reportUiError("react-error");
   }
   render() {
     return this.state.failed ? (
@@ -21,6 +26,7 @@ export class ErrorBoundary extends Component<
           account details or signed-in URLs.
         </p>
         <button onClick={() => location.reload()}>Reload this window</button>
+        <DiagnosticsPanel />
       </main>
     ) : (
       this.props.children
