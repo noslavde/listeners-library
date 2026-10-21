@@ -34,6 +34,7 @@ export function MetadataPanel({
     [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false),
     [syncError, setSyncError] = useState("");
+  const [annotationSigning, setAnnotationSigning] = useState(false);
   const library = useRef(onLibrary),
     syncNow = useRef<() => Promise<void>>(async () => {});
   library.current = onLibrary;
@@ -164,7 +165,10 @@ export function MetadataPanel({
           onClick={() =>
             run(async () => {
               waiting.current = true;
-              await invoke("api_login", { profile: "android" });
+              await invoke("api_login", {
+                profile: "android",
+                annotationSigning,
+              });
               await refreshNow.current();
             })
           }
@@ -178,6 +182,17 @@ export function MetadataPanel({
       >
         {syncing ? "Syncing…" : busy ? "Working…" : "Sync library"}
       </button>
+      {!connected && (
+        <label className="annotation-signin">
+          <input
+            type="checkbox"
+            checked={annotationSigning}
+            disabled={busy || pending}
+            onChange={(e) => setAnnotationSigning(e.target.checked)}
+          />{" "}
+          Enable Audible annotation sync (experimental)
+        </label>
+      )}
       <details>
         <summary>Account</summary>
         <p>

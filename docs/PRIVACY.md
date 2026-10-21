@@ -1,12 +1,16 @@
-# Privacy and local data — 0.2.5 beta
+# Privacy and local data — 0.2.6 beta
 
-Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or remote notes service. Audible/Amazon receive normal account and playback requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
+Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or app-operated notes server. Audible/Amazon receive normal account and playback requests, optional annotation-sync requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
 
 ## What stays on this PC
 
 Your library, notes, local listening history, saved positions and account-specific selections are stored in encrypted local databases. Login tokens and the database key are protected by Windows for the current Windows user. The key is random, is not in the installer and is not sent to the app interface. There is no unencrypted database fallback or developer recovery key.
 
-Bookmarks and clips use the same encrypted account database. They contain a book identifier, saved type, start/end positions, optional text and optional local creation time. No audio files are captured. Replaying a clip uses the official player and changes its real timeline, so Audible may sync that listening position. Return to listening seeks back explicitly. Saved clips/bookmarks themselves are not synced to or imported from Audible's mobile app. Their content is excluded from diagnostic reports. Readable notes exports include clip ranges and must be kept private.
+Bookmarks and clips use the same encrypted account database. They contain a book identifier, saved type, start/end positions, optional text and optional local save/import time. No audio files are captured. Replaying a clip uses the official player and changes its real timeline, so Audible may sync that listening position. Return to listening seeks back explicitly. Their content is excluded from diagnostic reports. Readable notes exports include clip ranges, sync state and conflicting note versions when present; keep them private.
+
+Optional experimental annotation sync requests a device-signing credential when you select Enable Audible annotation sync at sign-in. It is stored with the Windows-protected native account and never returned to webviews, diagnostics or note exports. Refresh reads annotations directly from Amazon's fixed HTTPS sidecar service; Send explicitly submits one selected annotation there. Redirects are disabled. The app adds no third-party sync server. There is no automatic bulk upload or periodic sync.
+
+Cloud annotation IDs, last common versions, conflict snapshots, hidden-record markers and uncertain-write intents stay in the account's encrypted database. Removing a PC copy does not remove it from Audible; the hidden marker prevents repeat imports of that cloud ID. Items missing remotely remain locally recoverable. A request dispatched before sign-out may still finish on its original account; future-account results and credentials are isolated by generation guards. Sign-out retains encrypted sync state and blocks automatic account restoration until cleanup completes, as with other account data. Erase removes those account stores. Server copies are controlled through Audible, not app-local erasure.
 
 The recovery log stores book identifiers, playback positions, durations, local timestamps and event labels. It contains no audio, cookies or tokens. It is limited to 100 entries per book and 3,000 per account, with entries older than 90 days pruned on subsequent saves. The most recent checkpoint per book remains separately until replaced by listening or an explicit position choice. It is not an exhaustive listening history or a record of mobile sessions.
 

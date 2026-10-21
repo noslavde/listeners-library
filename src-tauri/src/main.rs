@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod activity;
+mod annotation_sync;
 mod cover;
 mod current_book;
 mod desktop;
@@ -894,8 +895,13 @@ fn main() {
         .manage(listening::Listening::new())
         .manage(activity::Activity::new())
         .manage(history::History::default())
+        .manage(annotation_sync::Jobs(tokio::sync::Mutex::new(())))
         .manage(shortcuts::Shortcuts::new())
         .invoke_handler(tauri::generate_handler![
+            annotation_sync::annotation_sync_status,
+            annotation_sync::pull_annotations,
+            annotation_sync::push_annotation,
+            annotation_sync::resolve_annotation,
             highlights::save_highlight,
             highlights::delete_highlight,
             highlights::play_saved_clip,

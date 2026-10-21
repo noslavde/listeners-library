@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.5 beta
+# Getting started with Listener’s Library 0.2.6 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -26,11 +26,21 @@ You can browse another series without interrupting playback. **Explore** groups 
 - Open **Bookmarks, clips & notes** in the library. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
 - To back up notes, expand the export section, type **EXPORT NOTES**, choose **Choose export file…** and select a private location. The JSON file is readable, unencrypted text. It contains notes/book identifiers, never login tokens or the encryption key. A cloud-synced destination may upload it. There is no automatic note import in this beta.
 
-## Progress across devices
+## Optional bookmark, note and clip sync
 
-For saved moments, **◇** in the mini player adds a bookmark, **✂** saves the preceding 30 seconds (less near the beginning), and **☷** opens **Bookmarks, clips & notes** in the library. Filter or search your items and edit their text. New clips have editable start/end times in `hours:minutes:seconds`, up to five minutes apart. Optional notes can describe a bookmark or clip. These items are encrypted locally and do not sync to Audible mobile.
+This beta offers explicit annotation reads/sends, not automatic background sync. Save drafts and export important notes first. If your existing connection lacks support, sign out, select **Enable Audible annotation sync (experimental)** beside Sign in, and reconnect through Amazon. Under **Bookmarks, clips & notes**, select a book and choose **Refresh from Audible**. Start with a disposable clip created on mobile. If that read fails, stop and follow [the round-trip test checklist](ANNOTATION_SYNC_TEST.md).
+
+**Send to Audible** sends an individual new item; **Send edits to Audible** supports eligible same-position text edits after checking the remote version. A fresh server read must verify a send before it is marked verified. Verify on your phone separately. For compatibility, send unlabeled bookmarks, point notes, and clips from 5 to 44 seconds. Moved ranges and ranged-note writes are refused. Avoid editing the same item on mobile during a send; the API does not offer a verified atomic conditional-update contract.
+
+When both versions changed, the app shows the Audible version alongside your PC item. **Use Audible; keep PC copy** preserves your edits as a separate local item before adopting Audible's version. **Keep this PC version only** keeps your local version without changing Audible. **Remove PC copy** is local-only; it never sends a cloud delete. Unverified sends block blind retries. Refresh and check mobile before further action. See the checklist for restart, deletion and interruption expectations.
+
+## Saved moments
+
+For saved moments, **◇** in the mini player adds a bookmark, **✂** saves the preceding 30 seconds (less near the beginning), and **☷** opens **Bookmarks, clips & notes** in the library. Filter or search your items and edit their text. New clips have editable start/end times in `hours:minutes:seconds`, up to five minutes apart. Optional notes can describe a bookmark or clip. These items are encrypted locally; the optional annotation-sync controls above can read and send eligible items explicitly.
 
 **Play clip** moves the official player's timeline and pauses at the saved end. **Return to listening** seeks back to the position before your first replay, confirms the player's new position and records that choice locally. It does not resume a paused player. Audible may sync the real timeline while you replay, so return before closing if you want to keep your original spot. **Go to bookmark** also confirms and saves your deliberate position choice. See [saved-items testing](BOOKMARKS_TEST.md).
+
+## Progress across devices
 
 Audible's official player handles account progress. The companion separately saves dated PC checkpoints from confirmed listening, rather than from a newly loaded or paused player. A cloud check time is not a listening time. On opening a book, a difference of more than 15 seconds from the saved PC checkpoint pauses startup and opens **History**. Choose **Resume PC** or **Use Audible**. Our integration has no verified cloud listening time, so it does not guess which position is newer or assume the farthest position is the right one.
 

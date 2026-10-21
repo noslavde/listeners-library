@@ -4,6 +4,7 @@
 mod account_restore;
 pub mod browser_test;
 mod profile;
+pub(crate) mod annotations;
 pub mod stream;
 pub mod upload;
 mod website;
@@ -37,6 +38,7 @@ pub struct MetadataState {
     diagnostics: Mutex<Vec<String>>,
 }
 struct Pending {
+    annotation_signing: bool,
     profile: Profile,
     verifier: String,
     serial: String,
@@ -45,6 +47,8 @@ struct Pending {
 }
 #[derive(Serialize, Deserialize)]
 struct Auth {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    annotation_signing: Option<annotations::SigningAuth>,
     #[serde(default)]
     account_id: Option<String>,
     #[serde(default)]
@@ -427,6 +431,7 @@ pub async fn api_login(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     profile: Option<Profile>,
+    annotation_signing: Option<bool>,
 ) -> Result<(), String> {
     super::local(&window)?;
     if app.state::<crate::storage::Storage>().restore_blocked() {
@@ -457,6 +462,7 @@ pub async fn api_login(
         return Err("Finish or cancel the current sign-in first.".into());
     }
     let p = Pending {
+        annotation_signing: annotation_signing.unwrap_or(false),
         profile: profile.unwrap_or(Profile::Android),
         verifier: URL_SAFE_NO_PAD.encode(random(32)),
         serial: random(20).iter().map(|b| format!("{b:02x}")).collect(),
@@ -528,7 +534,7 @@ pub async fn api_login(
     Ok(())
 }
 fn registration_body(p: &Pending, code: &str) -> Value {
-    json!({"age_info":{},"auth_data":{"client_id":client_id(&p.serial,p.profile),"authorization_code":code,"code_verifier":p.verifier,"code_algorithm":"SHA-256","client_domain":"DeviceLegacy"},"user_context_map":{"frc":STANDARD.encode(random(313)).trim_end_matches('=')},"cookies":{"website_cookies":[{"Name":"amzn-app-id","Value":"MAPiOSLib/6.0/ToHideRetailLink"},{"Name":"id_pk","Value":"eyJuIjoiMSJ9"}],"domain":".amazon.com"},"registration_data":p.profile.registration(&p.serial),"requested_extensions":["device_info","customer_info"],"requested_token_type":["bearer"]})
+    json!({"age_info":{},"auth_data":{"client_id":client_id(&p.serial,p.profile),"authorization_code":code,"code_verifier":p.verifier,"code_algorithm":"SHA-256","client_domain":"DeviceLegacy"},"user_context_map":{"frc":STANDARD.encode(random(313)).trim_end_matches('=')},"cookies":{"website_cookies":[{"Name":"amzn-app-id","Value":"MAPiOSLib/6.0/ToHideRetailLink"},{"Name":"id_pk","Value":"eyJuIjoiMSJ9"}],"domain":".amazon.com"},"registration_data":p.profile.registration(&p.serial),"requested_extensions":["device_info","customer_info"],"requested_token_type":if p.annotation_signing {json!(["bearer","mac_dms"])}else{json!(["bearer"])}})
 }
 async fn register(app: &tauri::AppHandle, p: Pending, code: String) -> Result<(), String> {
     let auth = exchange_registration_traced(
@@ -588,9 +594,14 @@ async fn exchange_registration_traced(
         .await
         .map_err(|_| "API registration network failure")?;
     trace(format!("registration: HTTP {}", response.status().as_u16()));
-    let value = decode_registration(response, &trace).await?;
+    let mut value = decode_registration(response, &trace).await?;
     trace(registration_shape(&value));
-    registration_auth(&value, p.profile)
+    let result=registration_auth(&value,p.profile);
+    fn scrub(v:&mut Value){use zeroize::Zeroize;match v{Value::String(s)=>s.zeroize(),Value::Array(a)=>a.iter_mut().for_each(scrub),Value::Object(o)=>o.values_mut().for_each(scrub),_=>{}}}
+    scrub(&mut value);
+    let mut auth=result?;
+    if !p.annotation_signing {auth.annotation_signing=None;}
+    Ok(auth)
 }
 async fn decode_registration(
     mut response: reqwest::Response,
@@ -739,6 +750,7 @@ fn registration_auth(value: &Value, profile: Profile) -> Result<Auth, String> {
         .pointer("/response/success/tokens/bearer")
         .ok_or("Amazon did not return account tokens; sign-in was not saved")?;
     Ok(Auth {
+        annotation_signing: annotations::registration(value),
         account_id: value.pointer("/response/success/extensions/customer_info/user_id")
             .and_then(Value::as_str).filter(|id| !id.is_empty() && id.len() <= 512).map(str::to_owned),
         profile,
@@ -774,7 +786,7 @@ async fn decode(mut response: reqwest::Response) -> Result<Value, String> {
             response.status().as_u16()
         ));
     }
-    let mut bytes = Vec::new();
+    let mut bytes = zeroize::Zeroizing::new(Vec::new());
     while let Some(chunk) = response
         .chunk()
         .await
@@ -1389,9 +1401,16 @@ pub async fn api_position(
 mod tests {
     use super::*;
     #[test]
+    fn annotation_signing_is_explicit_and_normal_login_stays_bearer_only(){
+        let mut p=Pending{annotation_signing:false,profile:Profile::Android,verifier:"synthetic-verifier".into(),serial:"synthetic-serial".into(),created:0,generation:1};
+        assert_eq!(registration_body(&p,"synthetic-code")["requested_token_type"],json!(["bearer"]));
+        p.annotation_signing=true;
+        assert_eq!(registration_body(&p,"synthetic-code")["requested_token_type"],json!(["bearer","mac_dms"]));
+    }
+    #[test]
     fn login_profile_is_consistent_across_pkce_client_and_registration() {
         for profile in [Profile::Ios, Profile::Android] {
-            let pending = Pending {
+            let pending = Pending { annotation_signing: false,
                 profile,
                 verifier: "fake-test-verifier".into(),
                 serial: "TESTSERIAL".into(),
@@ -1438,6 +1457,7 @@ mod tests {
         .unwrap();
         assert_eq!(auth.profile, Profile::Ios);
         let android = Auth {
+            annotation_signing: None,
             account_id: auth.account_id.clone(),
             profile: Profile::Android,
             access: auth.access.clone(),
@@ -1549,7 +1569,7 @@ mod login_handoff_tests {
     fn closing_browser_after_callback_does_not_cancel_approved_exchange() {
         let state = MetadataState::with_auth(None);
         state.generation.store(7, Ordering::SeqCst);
-        *state.pending.lock().unwrap() = Some(Pending {
+        *state.pending.lock().unwrap() = Some(Pending { annotation_signing: false,
             profile: Profile::Android,
             verifier: "dummy".into(),
             serial: "dummy".into(),
@@ -1564,7 +1584,7 @@ mod login_handoff_tests {
     fn closing_browser_before_callback_invalidates_pending_login() {
         let state = MetadataState::with_auth(None);
         state.generation.store(7, Ordering::SeqCst);
-        *state.pending.lock().unwrap() = Some(Pending {
+        *state.pending.lock().unwrap() = Some(Pending { annotation_signing: false,
             profile: Profile::Android,
             verifier: "dummy".into(),
             serial: "dummy".into(),

@@ -11,7 +11,7 @@ pub struct Passage {
     pub end_position: Option<f64>,
     pub text: String,
 }
-fn valid(p: &Passage) -> Result<(), String> {
+pub(crate) fn valid(p: &Passage) -> Result<(), String> {
     if !p.position.is_finite() || !(0.0..31_536_000.0).contains(&p.position) || p.text.len() > 10000
     {
         return Err("Choose a valid timestamp and at most 10,000 bytes of text".into());
@@ -30,7 +30,7 @@ fn valid(p: &Passage) -> Result<(), String> {
         _ => Err("Clips need an end after the start, up to five minutes long".into()),
     }
 }
-fn save(
+pub(crate) fn save(
     c: &Connection,
     asin: &str,
     p: &Passage,
@@ -90,7 +90,7 @@ fn save(
         .map_err(|_| "Cannot finish bookmark save")?;
     result
 }
-fn get(c: &Connection, asin: &str, id: i64) -> Result<Passage, String> {
+pub(crate) fn get(c: &Connection, asin: &str, id: i64) -> Result<Passage, String> {
     crate::notes::schema(c)?;
     c.query_row("SELECT COALESCE(d.kind,CASE WHEN n.text='Bookmark' THEN 'bookmark' ELSE 'note' END),n.position,d.end_position,n.text FROM notes n LEFT JOIN note_details d ON d.note_id=n.rowid WHERE n.rowid=?1 AND n.asin=?2", params![id,asin], |r| Ok(Passage{kind:r.get(0)?,position:r.get(1)?,end_position:r.get(2)?,text:r.get(3)?})).map_err(|_|"This saved item is no longer available".into())
 }

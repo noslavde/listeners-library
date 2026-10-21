@@ -1,5 +1,7 @@
 # Bookmarks, clips and notes — Windows test checklist
 
+These checks cover the local feature introduced in 0.2.5. For 0.2.6's optional manual Audible sync, also follow ANNOTATION_SYNC_TEST.md; those tests take precedence over older local-only descriptions below.
+
 1. Open an owned book and play past 30 seconds. In the mini player, **◇** saves a bookmark, **✂** captures the preceding 30 seconds (less near the start), and **☷** returns to the saved-items panel in the library. Playback should continue during capture and when returning to the library. Ctrl+Alt+B should still save a bookmark.
 2. In **Bookmarks, clips & notes**, check the book selector, Everything/Bookmarks/Clips/Notes filters, search and sorting. Reading saved items must not start playback. Older notes and bookmarks should retain their IDs, text and timestamps; older items may have no saved date.
 3. Choose **Clip last 30 seconds**. The times should stay fixed while typing. Adjust Start/End with `hours:minutes:seconds`, or use Start here/End here. Save with and without a note. Invalid times, an end before the start, ranges beyond the book, and clips longer than five minutes should be rejected.

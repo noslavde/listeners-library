@@ -1,0 +1,73 @@
+.annotation-sync-panel {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 16px 18px;
+  margin: 18px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+}
+.annotation-sync-panel strong {
+  font-size: 14px;
+}
+.annotation-sync-panel p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 7px 0;
+}
+.annotation-sync-panel small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.annotation-sync-panel button {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.annotation-state {
+  font-size: 10px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.annotation-conflict,
+.annotation-unverified {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.annotation-conflict blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 2px solid var(--accent);
+  background: var(--bg);
+}
+.annotation-conflict button {
+  margin: 5px 6px 0 0;
+  font-size: 12px;
+}
+.annotation-signin {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.annotation-unverified,
+.annotation-conflict .note-text {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .annotation-sync-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+}

@@ -5,6 +5,7 @@ import type { Book, Snapshot } from "./model";
 import { desktop } from "./playback";
 import { chapterInfo } from "./playerInfo";
 import "./highlights.css";
+import "./annotationSync.css";
 import {
   excerpt,
   parseStamp,
@@ -24,6 +25,14 @@ type Draft = {
   editing?: Highlight;
 };
 const labels = { bookmark: "Bookmark", clip: "Clip", note: "Note" };
+const syncLabels = {
+  local: "Only on this PC",
+  synced: "Verified on Audible at last check",
+  "local-changes": "PC changes not sent",
+  conflict: "Changed on both devices",
+  "remote-missing": "Missing on Audible · PC copy kept",
+  unverified: "Send outcome unverified · refresh first",
+};
 export function HighlightsPanel({
   books,
   active,
@@ -51,6 +60,7 @@ export function HighlightsPanel({
     revision = useRef(0),
     alive = useRef(false),
     section = useRef<HTMLDetailsElement>(null);
+  const [syncReady, setSyncReady] = useState<boolean>();
   async function load() {
     const version = ++revision.current,
       account = generation.current;
@@ -75,6 +85,13 @@ export function HighlightsPanel({
       .then((g) => {
         if (!dead) {
           generation.current = g;
+          void invoke<boolean>("annotation_sync_status", { generation: g })
+            .then((ready) => {
+              if (!dead) setSyncReady(ready);
+            })
+            .catch(() => {
+              if (!dead) setSyncReady(false);
+            });
           return load();
         }
       })
@@ -223,7 +240,7 @@ export function HighlightsPanel({
           <h2>Keep the good parts.</h2>
           <p>Save a moment, replay a passage, or leave yourself a thought.</p>
         </div>
-        <span className="highlight-local">LOCAL · ENCRYPTED</span>
+        <span className="highlight-local">ENCRYPTED ON THIS PC</span>
       </header>
       <div className="highlight-toolbar">
         <label>
@@ -289,6 +306,38 @@ export function HighlightsPanel({
             </span>
           </button>
         ))}
+      </div>
+      <div className="annotation-sync-panel">
+        <div>
+          <strong>Audible sync · experimental</strong>
+          <p>
+            {syncReady
+              ? "Refresh reads this book’s mobile annotations. Send individual items explicitly; nothing is uploaded automatically. Avoid editing the same item on mobile during a send."
+              : syncReady === false
+                ? "To connect: save your drafts, export important notes, sign out, then sign in with Enable Audible annotation sync selected. Existing local items stay encrypted."
+                : "Checking Audible sync connection…"}
+          </p>
+          <small>
+            Mobile clips use 5–44 seconds. Longer clips and labeled bookmarks
+            stay local. Removing a PC copy does not delete anything on mobile.
+          </small>
+        </div>
+        <button
+          disabled={!syncReady || busy || selected === "*"}
+          onClick={() =>
+            void run(async () => {
+              const result = await invoke<{ message: string }>(
+                "pull_annotations",
+                { generation: generation.current, asin: selected },
+              );
+              if (!alive.current) return;
+              setStatus(result.message);
+              await load();
+            })
+          }
+        >
+          {busy ? "Working…" : "Refresh from Audible"}
+        </button>
       </div>
       {!draft ? (
         <div className="highlight-create">
@@ -441,6 +490,11 @@ export function HighlightsPanel({
               <div className="highlight-card-content">
                 <div className="highlight-meta">
                   <span className="highlight-kind">{labels[n.kind]}</span>
+                  <span
+                    className={`annotation-state annotation-state-${n.sync_state ?? "local"}`}
+                  >
+                    {syncLabels[n.sync_state ?? "local"]}
+                  </span>
                   <span>
                     {stamp(n.position)}
                     {n.end_position !== null
@@ -475,6 +529,33 @@ export function HighlightsPanel({
                   </time>
                 )}
                 <div className="highlight-card-actions">
+                  {(!n.sync_state ||
+                    n.sync_state === "local" ||
+                    n.sync_state === "local-changes") && (
+                    <button
+                      disabled={!syncReady || busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const message = await invoke<string>(
+                            "push_annotation",
+                            {
+                              generation: generation.current,
+                              asin: n.asin,
+                              id: n.id,
+                              expected: passageOnly(n),
+                            },
+                          );
+                          if (!alive.current) return;
+                          setStatus(message);
+                          await load();
+                        })
+                      }
+                    >
+                      {n.sync_state === "local-changes"
+                        ? "Send edits to Audible"
+                        : "Send to Audible"}
+                    </button>
+                  )}
                   {n.kind === "clip" && (
                     <button
                       disabled={!playable || busy}
@@ -545,10 +626,78 @@ export function HighlightsPanel({
                     Edit
                   </button>
                   <button disabled={busy} onClick={() => setDeleting(n.id)}>
-                    Delete
+                    Remove PC copy
                   </button>
                 </div>
                 {!playable && <small>Open this book to replay or jump.</small>}
+                {(n.sync_state === "conflict" ||
+                  n.sync_state === "remote-missing") && (
+                  <div className="annotation-conflict">
+                    <strong>
+                      {n.sync_state === "conflict"
+                        ? "Both versions are kept until you choose."
+                        : "Audible no longer returned this item. Your PC copy is still here."}
+                    </strong>
+                    {n.audible_version && (
+                      <blockquote>
+                        <small>
+                          {n.sync_state === "remote-missing"
+                            ? "Last seen on Audible"
+                            : "Audible version"}{" "}
+                          · {stamp(n.audible_version.position)}
+                          {n.audible_version.end_position !== null
+                            ? `–${stamp(n.audible_version.end_position)}`
+                            : ""}
+                        </small>
+                        <p className="note-text">
+                          {n.audible_version.text ||
+                            labels[n.audible_version.kind]}
+                        </p>
+                      </blockquote>
+                    )}
+                    <div>
+                      {([true, false] as const).map((useAudible) => (
+                        <button
+                          key={String(useAudible)}
+                          disabled={
+                            busy ||
+                            (useAudible && n.sync_state === "remote-missing")
+                          }
+                          onClick={() =>
+                            void run(async () => {
+                              await invoke("resolve_annotation", {
+                                generation: generation.current,
+                                asin: n.asin,
+                                id: n.id,
+                                expected: passageOnly(n),
+                                useAudible,
+                                expectedRemote: n.audible_version ?? null,
+                                expectedState: n.sync_state,
+                              });
+                              if (!alive.current) return;
+                              setStatus(
+                                useAudible
+                                  ? "Used Audible’s version and kept your edits as a separate PC copy."
+                                  : "Kept this PC version only. Audible was not changed.",
+                              );
+                              await load();
+                            })
+                          }
+                        >
+                          {useAudible
+                            ? "Use Audible; keep PC copy"
+                            : "Keep this PC version only"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {n.sync_state === "unverified" && (
+                  <p className="annotation-unverified">
+                    A send may already have reached Audible. Refresh and check
+                    mobile before any retry; duplicate sends are blocked.
+                  </p>
+                )}
                 {deleting === n.id && (
                   <div
                     className="highlight-delete"
@@ -556,7 +705,8 @@ export function HighlightsPanel({
                     aria-label="Confirm deletion"
                   >
                     <span>
-                      Permanently delete this {labels[n.kind].toLowerCase()}?
+                      Remove this {labels[n.kind].toLowerCase()} from this PC?
+                      Audible will not be changed.
                     </span>
                     <button
                       disabled={busy}
@@ -574,7 +724,7 @@ export function HighlightsPanel({
                         })
                       }
                     >
-                      Delete permanently
+                      Remove from this PC
                     </button>
                     <button
                       disabled={busy}
@@ -591,9 +741,10 @@ export function HighlightsPanel({
       </div>
       <div className="highlight-footer">
         <p>
-          Saved only in this app on this Windows account. Clips replay through
-          the official player, move the timeline and pause at the end. They do
-          not sync to Audible’s mobile clips.
+          Items are encrypted on this PC. Audible sync is experimental and
+          explicit: refresh to read, or send an individual item. Removing a PC
+          copy never deletes mobile data. Clip replay still moves the official
+          player’s real timeline.
         </p>
         <details>
           <summary>Export & older notes</summary>

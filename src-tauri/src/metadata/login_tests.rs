@@ -5,7 +5,7 @@ use std::{
     net::TcpListener,
 };
 fn pending() -> Pending {
-    Pending {
+    Pending { annotation_signing: false,
         profile: Profile::default(),
         verifier: URL_SAFE_NO_PAD.encode([7u8; 32]),
         serial: "synthetic-device-serial".into(),

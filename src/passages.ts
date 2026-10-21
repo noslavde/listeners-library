@@ -9,6 +9,14 @@ export type Highlight = Passage & {
   id: number;
   asin: string;
   created_ms: number | null;
+  sync_state?:
+    | "local"
+    | "synced"
+    | "local-changes"
+    | "conflict"
+    | "remote-missing"
+    | "unverified";
+  audible_version?: Passage | null;
 };
 export function stamp(seconds: number) {
   const s = Math.floor(Math.max(0, seconds));

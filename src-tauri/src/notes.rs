@@ -12,19 +12,22 @@ pub struct Note {
     pub kind: String,
     pub end_position: Option<f64>,
     pub created_ms: Option<i64>,
+    pub sync_state: String,
+    pub audible_version: Option<crate::highlights::Passage>,
 }
 
 pub(crate) fn schema(c: &Connection) -> Result<(), String> {
-    c.execute_batch("CREATE TABLE IF NOT EXISTS note_details(note_id INTEGER PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('bookmark','note','clip')),end_position REAL,created_ms INTEGER); CREATE TRIGGER IF NOT EXISTS remove_note_details AFTER DELETE ON notes BEGIN DELETE FROM note_details WHERE note_id=old.rowid; END;").map_err(|_| "Cannot prepare bookmarks".to_string())
+    c.execute_batch("CREATE TABLE IF NOT EXISTS note_details(note_id INTEGER PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('bookmark','note','clip')),end_position REAL,created_ms INTEGER); CREATE TRIGGER IF NOT EXISTS remove_note_details AFTER DELETE ON notes BEGIN DELETE FROM note_details WHERE note_id=old.rowid; END;").map_err(|_| "Cannot prepare bookmarks".to_string())?;
+    crate::annotation_sync::schema(c)
 }
 fn read(c: &Connection) -> Result<Vec<Note>, String> {
     schema(c)?;
     let mut q = c
-        .prepare("SELECT n.rowid,n.asin,n.position,n.text,COALESCE(d.kind,CASE WHEN n.text='Bookmark' THEN 'bookmark' ELSE 'note' END),d.end_position,d.created_ms FROM notes n LEFT JOIN note_details d ON d.note_id=n.rowid ORDER BY n.rowid")
+        .prepare("SELECT n.rowid,n.asin,n.position,n.text,COALESCE(d.kind,CASE WHEN n.text='Bookmark' THEN 'bookmark' ELSE 'note' END),d.end_position,d.created_ms,COALESCE(l.state,'local'),l.base_json,EXISTS(SELECT 1 FROM annotation_attempts a WHERE a.note_id=n.rowid),l.remote_json FROM notes n LEFT JOIN note_details d ON d.note_id=n.rowid LEFT JOIN annotation_links l ON l.note_id=n.rowid ORDER BY n.rowid")
         .map_err(|_| "Cannot read notes")?;
     let rows = q
         .query_map([], |r| {
-            Ok(Note {
+            let mut note = Note {
                 id: r.get(0)?,
                 asin: r.get(1)?,
                 position: r.get(2)?,
@@ -32,7 +35,35 @@ fn read(c: &Connection) -> Result<Vec<Note>, String> {
                 kind: r.get(4)?,
                 end_position: r.get(5)?,
                 created_ms: r.get(6)?,
-            })
+                sync_state: r.get(7)?,
+                audible_version: None,
+            };
+            let base: Option<String> = r.get(8)?;
+            let uncertain: bool = r.get(9)?;
+            let remote: Option<String> = r.get(10)?;
+            if matches!(note.sync_state.as_str(), "conflict" | "remote-missing") {
+                note.audible_version = remote
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .and_then(|v| serde_json::from_value(v["passage"].clone()).ok());
+            }
+            if uncertain {
+                note.sync_state = "unverified".into();
+            } else if note.sync_state == "synced" {
+                let current = crate::highlights::Passage {
+                    kind: note.kind.clone(),
+                    position: note.position,
+                    end_position: note.end_position,
+                    text: note.text.clone(),
+                };
+                if base
+                    .and_then(|b| serde_json::from_str::<crate::highlights::Passage>(&b).ok())
+                    .as_ref()
+                    != Some(&current)
+                {
+                    note.sync_state = "local-changes".into();
+                }
+            }
+            Ok(note)
         })
         .map_err(|_| "Cannot read notes")?;
     rows.collect::<Result<Vec<_>, _>>()

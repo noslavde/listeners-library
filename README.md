@@ -26,6 +26,8 @@ In the 0.2.4 local test build, closing the main library exits the app; closing t
 
 ## Your data
 
+The 0.2.6 local test build adds optional, explicit Audible annotation sync. It can read mobile annotations, send individual eligible items and text edits, and preserve conflicts for review. It does not perform automatic sync or cloud deletions. Follow [the mobile round-trip test](docs/ANNOTATION_SYNC_TEST.md) before trusting it with important notes; live mobile compatibility is not yet verified.
+
 The 0.2.5 local test build adds **Bookmarks, clips & notes**, with searchable saved moments, editable clip ranges and mini-player capture. Clips replay through the official player; they are local metadata, not audio files, and do not sync to mobile. See [saved-items checks](docs/BOOKMARKS_TEST.md).
 
 Account tokens and local library/notes are protected on this Windows account. Website sign-in uses a separate local browser profile. No app analytics or crash uploader is added; Audible's official pages still contact their own services. This is not an independently audited product. Read [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md).
