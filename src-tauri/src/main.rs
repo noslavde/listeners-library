@@ -1,3 +1,8 @@
+//! Windows native host and Tauri command composition root. Registers state,
+//! validates local/remote origins, launches official website windows and wires
+//! lifecycle cleanup. Development-only commands must remain cfg-gated; feature
+//! logic lives in sibling modules.
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod activity;
 mod annotation_sync;
@@ -5,17 +10,18 @@ mod cover;
 mod current_book;
 mod desktop;
 mod diagnostics;
-mod history;
 mod highlights;
+mod history;
 mod launch;
 mod lifecycle;
 mod listening;
 mod media_keys;
 mod metadata;
 mod notes;
-mod privacy;
 mod player_sync;
+mod privacy;
 mod protection;
+mod reviews;
 mod shortcuts;
 mod start_playback;
 mod storage;
@@ -27,13 +33,18 @@ struct OfficialLaunch(std::sync::Mutex<Option<String>>);
 
 fn settings_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let c = app.state::<storage::Storage>().open()?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);").map_err(|_| "Settings database setup failed")?;
+    c.execute_batch(
+        "CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
+    )
+    .map_err(|_| "Settings database setup failed")?;
     Ok(c)
 }
 
 fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let namespace = metadata::account_namespace(app)?;
-    let c = app.state::<storage::Storage>().open_profile(namespace.as_deref())?;
+    let c = app
+        .state::<storage::Storage>()
+        .open_profile(namespace.as_deref())?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS listening_activity(asin TEXT PRIMARY KEY,listened_seconds REAL NOT NULL,last_listened INTEGER NOT NULL,position REAL NOT NULL,duration REAL NOT NULL,hidden INTEGER NOT NULL DEFAULT 0);").map_err(|_| "Listening history setup failed")?;
     c.execute_batch(
         "CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
@@ -49,10 +60,19 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
-pub(crate) fn local_origin(url:&url::Url)->bool{
-    let origin=matches!((url.scheme(),url.host_str(),url.port()),("tauri",Some("localhost"),None)|("http"|"https",Some("tauri.localhost"),None));
-    let dev=cfg!(debug_assertions)&&url.scheme()=="http"&&matches!(url.host_str(),Some("127.0.0.1"|"localhost"))&&url.port()==Some(1420);
-    (origin||dev)&&url.username().is_empty()&&url.password().is_none()&&matches!(url.path(),"/"|"/index.html")
+pub(crate) fn local_origin(url: &url::Url) -> bool {
+    let origin = matches!(
+        (url.scheme(), url.host_str(), url.port()),
+        ("tauri", Some("localhost"), None) | ("http" | "https", Some("tauri.localhost"), None)
+    );
+    let dev = cfg!(debug_assertions)
+        && url.scheme() == "http"
+        && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))
+        && url.port() == Some(1420);
+    (origin || dev)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && matches!(url.path(), "/" | "/index.html")
 }
 #[tauri::command]
 fn inspect_window(
@@ -292,9 +312,13 @@ fn start_library_launch(app: &tauri::AppHandle) {
         let _ = w.eval(format!("({})(...{args});", include_str!("launch.js")));
     }
 }
-fn open(app: &tauri::AppHandle, url: url::Url, expected_generation:Option<u64>) -> Result<(), String> {
-    let generation=expected_generation.unwrap_or(metadata::account_generation(app)?);
-    metadata::with_account_generation(app,generation,||Ok(()))?;
+fn open(
+    app: &tauri::AppHandle,
+    url: url::Url,
+    expected_generation: Option<u64>,
+) -> Result<(), String> {
+    let generation = expected_generation.unwrap_or(metadata::account_generation(app)?);
+    metadata::with_account_generation(app, generation, || Ok(()))?;
     let _ = app.emit_to("main", "playback-login-status", "Using the remembered local website session. Audible may require sign-in if it has expired.");
     if let Some(w) = app.get_webview_window("official") {
         w.navigate(url).map_err(|_| "Navigation failed")?;
@@ -305,7 +329,7 @@ fn open(app: &tauri::AppHandle, url: url::Url, expected_generation:Option<u64>) 
     let handle = app.clone();
     let page_handle = app.clone();
     let popup_handle = app.clone();
-    let instance=launch::next_instance(app);
+    let instance = launch::next_instance(app);
     // Both account sign-in and official playback share this local browser profile.
     let official=WebviewWindowBuilder::new(app, "official", WebviewUrl::External(url))
         .title("Official Audible · remembered local session")
@@ -499,13 +523,17 @@ fn open(app: &tauri::AppHandle, url: url::Url, expected_generation:Option<u64>) 
         })
         .build()
         .map_err(|_| "Cannot open official player")?;
-    if !playback_session_current(app,generation,instance){let _=official.destroy();return Err("Account changed; playback opening canceled.".into());}
+    if !playback_session_current(app, generation, instance) {
+        let _ = official.destroy();
+        return Err("Account changed; playback opening canceled.".into());
+    }
     privacy::harden_view(&official)?;
 
     Ok(())
 }
-fn playback_session_current(app:&tauri::AppHandle,generation:u64,instance:u64)->bool{
-    launch::active_instance(app,instance)&&metadata::account_generation(app).is_ok_and(|g|g==generation)
+fn playback_session_current(app: &tauri::AppHandle, generation: u64, instance: u64) -> bool {
+    launch::active_instance(app, instance)
+        && metadata::account_generation(app).is_ok_and(|g| g == generation)
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -563,10 +591,10 @@ async fn open_player(
     if !valid_asin(&asin) || asin.starts_with("DEMO") {
         return Err("Choose an owned title from your library first".into());
     }
-    let generation=metadata::account_generation(&app)?;
-    let launcher=app.state::<launch::LaunchHistory>();
-    let _opening=launcher.opening.lock().await;
-    metadata::with_account_generation(&app,generation,||Ok(()))?;
+    let generation = metadata::account_generation(&app)?;
+    let launcher = app.state::<launch::LaunchHistory>();
+    let _opening = launcher.opening.lock().await;
+    metadata::with_account_generation(&app, generation, || Ok(()))?;
     activity::set_hidden(&app, &asin, false)?;
     let already_ready = app
         .state::<desktop::PlayerHub>()
@@ -592,43 +620,51 @@ async fn open_player(
                 .and_then(|u| launch::clean_url(&u, &asin))
                 .is_some()
             {
-                if !history::blocked(&app){app.state::<start_playback::StartPlayback>().arm(&asin);}
+                if !history::blocked(&app) {
+                    app.state::<start_playback::StartPlayback>().arm(&asin);
+                }
                 return desktop::enter_mini_player(app.clone()).await;
             }
         }
     }
     // A previous document can still produce popup/navigation callbacks after a
     // navigation request. Retire that instance before starting a different book.
-    if let Some(w)=app.get_webview_window("official"){
+    if let Some(w) = app.get_webview_window("official") {
         let _=w.eval("window.__audibleLaunchCancel?.();window.__audibleAdapter?.hold(true);document.querySelectorAll('audio,video').forEach(m=>m.pause());");
-        history::flush(&app,"switch")?;
+        history::flush(&app, "switch")?;
         activity::finish(&app);
-        metadata::with_account_generation(&app,generation,||{
+        metadata::with_account_generation(&app, generation, || {
             launch::next_instance(&app);
-            w.destroy().map_err(|_|"Cannot close the previous playback window".into())
+            w.destroy()
+                .map_err(|_| "Cannot close the previous playback window".into())
         })?;
-        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(3);
-        while app.get_webview_window("official").is_some(){
-            if std::time::Instant::now()>=deadline{return Err("The previous player is still closing. Wait a moment and try again.".into());}
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while app.get_webview_window("official").is_some() {
+            if std::time::Instant::now() >= deadline {
+                return Err(
+                    "The previous player is still closing. Wait a moment and try again.".into(),
+                );
+            }
             tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         }
     }
-    metadata::with_account_generation(&app,generation,||Ok(()))?;
-    history::prepare(&app,&asin,generation)?;
+    metadata::with_account_generation(&app, generation, || Ok(()))?;
+    history::prepare(&app, &asin, generation)?;
     activity::finish(&app);
     app.state::<start_playback::StartPlayback>().arm(&asin);
     metadata::stream::invalidate(&app);
     desktop::selected_in_session(&app, &asin, generation)?;
-    let target=metadata::with_account_generation(&app,generation,||{
-    *app.state::<OfficialLaunch>()
-        .0
-        .lock()
-        .map_err(|_| "Playback launch unavailable")? = Some(asin.clone());
-    let remembered = launch::remembered(&app, &asin);
-    launch::selecting(&app, &asin, remembered.is_some());
-    Ok(remembered.unwrap_or_else(|| url::Url::parse("https://www.audible.com/library/titles").unwrap()))
+    let target = metadata::with_account_generation(&app, generation, || {
+        *app.state::<OfficialLaunch>()
+            .0
+            .lock()
+            .map_err(|_| "Playback launch unavailable")? = Some(asin.clone());
+        let remembered = launch::remembered(&app, &asin);
+        launch::selecting(&app, &asin, remembered.is_some());
+        Ok(remembered
+            .unwrap_or_else(|| url::Url::parse("https://www.audible.com/library/titles").unwrap()))
     })?;
-    open(&app,target,Some(generation))
+    open(&app, target, Some(generation))
 }
 #[tauri::command]
 fn player_command(
@@ -649,7 +685,7 @@ pub(crate) fn send_player_command(
     if !value.is_finite() {
         return Err("Invalid value".into());
     }
-    if history::blocked(&app) && matches!(action.as_str(),"play"|"seek"|"recover") {
+    if history::blocked(&app) && matches!(action.as_str(), "play" | "seek" | "recover") {
         return Err("Choose a saved position in Listening history before continuing.".into());
     }
     if ![
@@ -754,7 +790,9 @@ fn select_chapter(
 ) -> Result<(), String> {
     desktop::player_local(&window)?;
     metadata::require_account(&app)?;
-    if history::blocked(&app){return Err("Choose a saved position before selecting a chapter.".into());}
+    if history::blocked(&app) {
+        return Err("Choose a saved position before selecting a chapter.".into());
+    }
     if !position.is_finite()
         || !(0.0..31_536_000.0).contains(&position)
         || title.is_empty()
@@ -795,7 +833,8 @@ pub(crate) fn clear_official_session(app: &tauri::AppHandle) -> Result<(), Strin
         .map_err(|_| "Playback launch unavailable")? = None;
     let profile = account_web_profile(app)?;
     if let Some(w) = app.get_webview_window("official") {
-        w.destroy().map_err(|_| "Cannot stop official website before sign-out")?;
+        w.destroy()
+            .map_err(|_| "Cannot stop official website before sign-out")?;
     }
     let w = {
         if !profile.exists() {
@@ -848,36 +887,39 @@ fn main() {
     let instance = match lifecycle::Instance::acquire() {
         Ok(Some(instance)) => instance,
         Ok(None) => return,
-        Err(_) => { startup_error(); return; }
+        Err(_) => {
+            startup_error();
+            return;
+        }
     };
     if let Err(error) = tauri::Builder::default()
         .plugin(window_state::plugin())
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-            let root = app.path().app_local_data_dir()?;
-            privacy::apply_pending_reset(&root)?;
-            diagnostics::initialize(&root)?;
-            diagnostics::record(diagnostics::Code::OpeningProtectedStorage);
-            app.manage(storage::Storage::initialize(
-                &root,
-                !cfg!(debug_assertions)
-                    && !root
-                        .join(format!("{}.no-legacy-import", storage::SCOPE))
-                        .exists(),
-            )?);
-            diagnostics::record(diagnostics::Code::RestoringAccount);
-            app.manage(metadata::MetadataState::new(app.handle()));
-            diagnostics::record(diagnostics::Code::StartingServices);
-            privacy::setup(app)?;
-            window_state::setup(app)?;
-            listening::setup(app)?;
-            media_keys::setup(app);
-            shortcuts::setup(app);
-            instance.listen(app.handle().clone())?;
-            lifecycle::restore(app.handle());
-            diagnostics::record(diagnostics::Code::StartupReady);
-            Ok(())
+                let root = app.path().app_local_data_dir()?;
+                privacy::apply_pending_reset(&root)?;
+                diagnostics::initialize(&root)?;
+                diagnostics::record(diagnostics::Code::OpeningProtectedStorage);
+                app.manage(storage::Storage::initialize(
+                    &root,
+                    !cfg!(debug_assertions)
+                        && !root
+                            .join(format!("{}.no-legacy-import", storage::SCOPE))
+                            .exists(),
+                )?);
+                diagnostics::record(diagnostics::Code::RestoringAccount);
+                app.manage(metadata::MetadataState::new(app.handle()));
+                diagnostics::record(diagnostics::Code::StartingServices);
+                privacy::setup(app)?;
+                window_state::setup(app)?;
+                listening::setup(app)?;
+                media_keys::setup(app);
+                shortcuts::setup(app);
+                instance.listen(app.handle().clone())?;
+                lifecycle::restore(app.handle());
+                diagnostics::record(diagnostics::Code::StartupReady);
+                Ok(())
             })();
             if result.is_err() {
                 diagnostics::record(diagnostics::Code::StartupFailed);
@@ -898,6 +940,8 @@ fn main() {
         .manage(annotation_sync::Jobs(tokio::sync::Mutex::new(())))
         .manage(shortcuts::Shortcuts::new())
         .invoke_handler(tauri::generate_handler![
+            reviews::list_reviews,
+            reviews::save_review,
             annotation_sync::annotation_sync_status,
             annotation_sync::pull_annotations,
             annotation_sync::push_annotation,
@@ -993,12 +1037,14 @@ fn main() {
             load_library
         ])
         .build(tauri::generate_context!())
-        .map(|app| app.run(|app, event| match event {
-            tauri::RunEvent::Ready => lifecycle::restore(app),
-            tauri::RunEvent::ExitRequested { .. } => lifecycle::prepare_exit(app),
-            tauri::RunEvent::Exit => diagnostics::record(diagnostics::Code::CleanExit),
-            _ => {}
-        }))
+        .map(|app| {
+            app.run(|app, event| match event {
+                tauri::RunEvent::Ready => lifecycle::restore(app),
+                tauri::RunEvent::ExitRequested { .. } => lifecycle::prepare_exit(app),
+                tauri::RunEvent::Exit => diagnostics::record(diagnostics::Code::CleanExit),
+                _ => {}
+            })
+        })
     {
         let _ = error;
         diagnostics::record(diagnostics::Code::StartupFailed);
@@ -1006,19 +1052,21 @@ fn main() {
     }
 }
 fn startup_error() {
-        static SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if SHOWN.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
-        use windows::core::{w, PCWSTR};
-        use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-        let text:Vec<u16>="Listener’s Library could not start. Close older copies in Task Manager and retry. Your saved data has not been reset; do not delete the database key. A diagnostic event may be available under Troubleshooting after a successful restart.".encode_utf16().chain(Some(0)).collect();
-        unsafe {
-            MessageBoxW(
-                None,
-                PCWSTR(text.as_ptr()),
-                w!("Listener’s Library — protected storage"),
-                MB_OK | MB_ICONERROR,
-            );
-        }
+    static SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if SHOWN.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let text:Vec<u16>="Listener’s Library could not start. Close older copies in Task Manager and retry. Your saved data has not been reset; do not delete the database key. A diagnostic event may be available under Troubleshooting after a successful restart.".encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(text.as_ptr()),
+            w!("Listener’s Library — protected storage"),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -1039,12 +1087,22 @@ mod tests {
         assert!(!valid_asin("../evil"));
     }
     #[test]
-    fn local_commands_reject_provider_pages_and_lookalike_origins(){
-        for raw in ["https://www.audible.com/","https://tauri.localhost.evil.test/","https://user@tauri.localhost/","https://tauri.localhost:8443/","file:///index.html"]{
+    fn local_commands_reject_provider_pages_and_lookalike_origins() {
+        for raw in [
+            "https://www.audible.com/",
+            "https://tauri.localhost.evil.test/",
+            "https://user@tauri.localhost/",
+            "https://tauri.localhost:8443/",
+            "file:///index.html",
+        ] {
             assert!(!local_origin(&url::Url::parse(raw).unwrap()));
         }
-        assert!(local_origin(&url::Url::parse("http://tauri.localhost/index.html?mini=1").unwrap()));
-        assert!(local_origin(&url::Url::parse("tauri://localhost/").unwrap()));
+        assert!(local_origin(
+            &url::Url::parse("http://tauri.localhost/index.html?mini=1").unwrap()
+        ));
+        assert!(local_origin(
+            &url::Url::parse("tauri://localhost/").unwrap()
+        ));
     }
 }
 

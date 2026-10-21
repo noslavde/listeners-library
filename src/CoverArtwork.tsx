@@ -1,7 +1,17 @@
+/**
+ * Dedicated cover-artwork window. Reads the native-selected safe image and
+ * closes independently of playback; no signed-in website or account token is
+ * rendered here.
+ */
+
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeCover } from "./Cover";
 
+/**
+ * Loads native-selected artwork for this dedicated window and disposes its
+ * event/keyboard subscriptions on close.
+ */
 export function CoverArtwork() {
   const [art, setArt] = useState<{ title: string; url: string }>();
   const [error, setError] = useState("");

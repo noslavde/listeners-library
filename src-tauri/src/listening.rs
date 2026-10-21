@@ -1,3 +1,7 @@
+//! Validated preferences, app volume and sleep timers. Preferences use the shared
+//! encrypted settings store; live observations enforce time/chapter boundaries
+//! and report timer completion to local windows.
+
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Mutex,
@@ -55,7 +59,7 @@ impl Preferences {
             && self.rewind_seconds <= 30
             && matches!(self.progress_mode.as_str(), "chapter" | "book")
             && [
-                "title", "author", "series", "recent", "shortest", "longest", "progress",
+                "title", "author", "series", "recent", "shortest", "longest", "progress", "rating",
             ]
             .contains(&self.library_sort.as_str())
             && valid_theme(&self.theme)
@@ -157,6 +161,8 @@ fn notify(app: &tauri::AppHandle) {
         let _ = app.emit_to("mini-player", "listening-settings", &v);
     }
 }
+/// Validate the combined preference patch before persistence; live media
+/// behavior is applied by the command/observation paths.
 pub fn save(app: &tauri::AppHandle, patch: Patch) -> Result<(), String> {
     let state = app.state::<Listening>();
     let mut guard = state
@@ -236,6 +242,8 @@ fn chapter_end(book: &serde_json::Value, position: f64, duration: f64) -> Option
         .filter(|end| *end > position)
 }
 #[tauri::command]
+/// Arm a validated time/chapter timer for the current player, distinct from
+/// per-book clip replay bounds.
 pub fn set_sleep_timer(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -306,6 +314,8 @@ pub fn cancel_sleep(app: &tauri::AppHandle) {
 
 // Reconfigure idempotently on each valid sample so new documents/media elements
 // receive preferences even when their metadata becomes available after page load.
+/// Update timer state from live official playback and pause at a reached
+/// time/chapter boundary.
 pub fn observe(app: &tauri::AppHandle, s: &super::PlayerState) {
     if !s.available || s.sample {
         return;
@@ -510,6 +520,11 @@ mod tests {
         let saved = serde_json::to_string(&p).unwrap();
         let loaded: Preferences = serde_json::from_str(&saved).unwrap();
         assert!(loaded.valid());
+        assert!(Preferences {
+            library_sort: "rating".into(),
+            ..p.clone()
+        }
+        .valid());
         assert_eq!(loaded.speed, 1.75);
         assert!(loaded.pause_after_chapter);
         assert!(!Preferences {

@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.6 beta
+# Getting started with Listener’s Library 0.2.7 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -10,12 +10,20 @@ This installer is unsigned. Windows may report an unknown publisher or your devi
 
 ## Sign in and play a book
 
-1. Open Listener’s Library and choose **Sign in**. Enter your password and verification codes only on the official Amazon forms.
+1. Open Listener’s Library and open **Settings → Sign in**. Enter your password and verification codes only on the official Amazon forms.
 2. Your library loads automatically. **Library account connected** means the library connection is saved; Amazon may still request website verification before audio can play.
 3. Choose **Listen in mini player**. The official Audible window opens the title or searches your website library for it. If asked, sign in or click **Listen now** beside the highlighted title.
 4. When the book starts, the compact player opens and the other windows hide. Its **↗** button restores the library; audio continues.
 
 You can browse another series without interrupting playback. **Explore** groups books already in your library; it is not the complete Audible store catalog. **Set as current** pins a book until you change it. **Continue listening** includes meaningful listening in this app, not every book you briefly tested; its How this works menu explains the policy.
+
+## Find your way around
+
+Use **Library**, **Bookmarks & notes**, **My reviews**, and **Settings** at the top. Playback continues when you change sections. Account actions, privacy, diagnostics and playback help are under **Settings**. Your unsaved note and review drafts survive section changes, but not sign-out or closing the app. Save important work before updating.
+
+The main window player has the same controls as the mini player, including chapter navigation, saved moments, sync, sleep and history. Its arrow opens the mini player; the mini player’s arrow returns to the library.
+
+In **My reviews**, select a book, enter an optional **0.0–5.0** rating in **0.1** steps and/or write a review, then choose **Save review**. A blank rating means unrated; **0.0** is a rating. Clear rating removes only the draft rating; save to apply it. Remove review asks before deleting the saved local rating and text. These stay encrypted for this account on this PC and never sync to Audible. Library cards show your rating; **Sort → My rating · highest first** puts unrated books last. Reviews do not export with bookmarks.
 
 ## Controls and notes
 
@@ -23,7 +31,7 @@ You can browse another series without interrupting playback. **Explore** groups 
 - Click the small book cover to open a larger, resizable artwork window. Close it with **Close ×**, the window's X or Escape; playback continues. Drag the title/author area to move the mini player.
 - In the app: Space plays/pauses; Left/Right skip; B saves a bookmark; M switches mini player/library. These shortcuts leave focused inputs and buttons alone.
 - Elsewhere in Windows: Ctrl+Alt+Space, Ctrl+Alt+Left/Right, Ctrl+Alt+B and Ctrl+Alt+M. Other apps may occupy a shortcut. Headset/media keys also work when Windows selects this app's media session.
-- Open **Bookmarks, clips & notes** in the library. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
+- Open the **Bookmarks & notes** section. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
 - To back up notes, expand the export section, type **EXPORT NOTES**, choose **Choose export file…** and select a private location. The JSON file is readable, unencrypted text. It contains notes/book identifiers, never login tokens or the encryption key. A cloud-synced destination may upload it. There is no automatic note import in this beta.
 
 ## Optional bookmark, note and clip sync
@@ -54,17 +62,17 @@ To choose a local checkpoint instead, open **Playback help & options → Saved p
 
 ## When something does not work
 
-| What you see | What to do |
-| --- | --- |
-| Sign-in is still open | Complete Amazon verification, or use Account → Cancel sign-in. Retry when ready. |
-| Signed in but library is empty | Wait for sync, then choose Sync library. If it fails, check internet and the visible message. |
-| Book has not started | Choose Open Audible window. Complete verification or click Listen now beside the highlighted book. Retry this book if necessary. |
-| A sample or Get this title appears | Use Playback help & options → Open Audible library, find the owned title and click its Listen now. Do not continue from the sample. |
-| No sound | Check the app volume, paused state and Windows audio output, then show the official player. Its visible message may explain verification or playback failure. |
-| Chapter cannot be selected | Show the official player and try its Chapters control. Report whether official selection worked. |
-| Notes look missing after sign-in/update | Do not erase data. Read recovery below. |
-| Sign-out cleanup failed | Account access has stopped. Choose Account → Retry sign-out. Do not share the Windows session until cleanup finishes. |
-| App reports an encryption/key problem | Close other copies and retry. Do not delete/replace the key or erase data. Ask for help. |
+| What you see                            | What to do                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in is still open                   | Complete Amazon verification, or use Account → Cancel sign-in. Retry when ready.                                                                              |
+| Signed in but library is empty          | Wait for sync, then choose Sync library. If it fails, check internet and the visible message.                                                                 |
+| Book has not started                    | Choose Open Audible window. Complete verification or click Listen now beside the highlighted book. Retry this book if necessary.                              |
+| A sample or Get this title appears      | Use Playback help & options → Open Audible library, find the owned title and click its Listen now. Do not continue from the sample.                           |
+| No sound                                | Check the app volume, paused state and Windows audio output, then show the official player. Its visible message may explain verification or playback failure. |
+| Chapter cannot be selected              | Show the official player and try its Chapters control. Report whether official selection worked.                                                              |
+| Notes look missing after sign-in/update | Do not erase data. Read recovery below.                                                                                                                       |
+| Sign-out cleanup failed                 | Account access has stopped. Choose Account → Retry sign-out. Do not share the Windows session until cleanup finishes.                                         |
+| App reports an encryption/key problem   | Close other copies and retry. Do not delete/replace the key or erase data. Ask for help.                                                                      |
 
 ## Updating and recovering older notes
 

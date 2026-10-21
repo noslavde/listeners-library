@@ -1,3 +1,7 @@
+//! Public cover-artwork URL validation and separate artwork-window lifecycle.
+//! Checks local callers and the current selected book; artwork viewing must not
+//! change playback or expose signed website URLs.
+
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub(crate) fn dismiss(app: &tauri::AppHandle) {
@@ -22,6 +26,8 @@ fn artwork(app: &tauri::AppHandle) -> Result<Artwork, String> {
     })
 }
 #[tauri::command]
+/// Create/focus the separate artwork window from a trusted local player without
+/// changing playback.
 pub async fn open_cover(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
     super::desktop::player_local(&window)?;
     artwork(&app)?;
@@ -82,6 +88,8 @@ pub fn close_cover(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Resul
     Ok(())
 }
 
+/// Accept public artwork on the image allowlist; reject credentials,
+/// unsupported schemes and arbitrary website/player URLs.
 pub fn safe_url(raw: &str) -> Option<String> {
     if raw.len() > 2048 {
         return None;

@@ -1,3 +1,7 @@
+//! Windows DPAPI and owner/SYSTEM file-permission helpers. Development/release
+//! entropy differs; these protections reduce accidental exposure but do not
+//! isolate secrets from a compromised Windows user or administrator.
+
 use std::{os::windows::ffi::OsStrExt, path::Path};
 use windows::core::{w, PCWSTR};
 use windows::Win32::{
@@ -12,9 +16,13 @@ use windows::Win32::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
+/// Seal bounded bytes with current-user DPAPI and the build scope's entropy;
+/// returns ciphertext suitable for local storage.
 pub fn protect(input: &[u8]) -> Result<Vec<u8>, String> {
     transform(input, true)
 }
+/// Unseal only within the matching Windows user/build scope and return a
+/// zeroizing plaintext buffer.
 pub fn unprotect(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
     transform(input, false).map(Zeroizing::new)
 }

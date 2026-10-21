@@ -1,3 +1,9 @@
+/**
+ * Account/book-scoped listening history and recovery UI. Recovery is an
+ * explicit choice between local and Audible positions, not a claim that either
+ * service exposes the newest listening timestamp.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -19,6 +25,11 @@ type HistoryStatus = {
   conflict: { pc: HistoryEntry; audible: number } | null;
   entries: HistoryEntry[];
 };
+/**
+ * Loads history for one book and refreshes on native history events. Revision
+ * checks and cleanup prevent a previous book's recovery state from leaking into
+ * the next selection.
+ */
 export function useListeningHistory(book?: Book) {
   const [status, setStatus] = useState<HistoryStatus>(),
     [error, setError] = useState(""),
@@ -119,6 +130,11 @@ function label(kind: string) {
     )[kind] ?? "Saved position"
   );
 }
+/**
+ * Requires an explicit recovery choice when positions conflict and exposes
+ * dated PC checkpoints; restores are confirmed natively before success is
+ * shown.
+ */
 export function ListeningHistoryPanel({
   history,
   available,

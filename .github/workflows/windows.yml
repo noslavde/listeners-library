@@ -1,9 +1,11 @@
+# Windows validation and NSIS packaging. Release uploads use the existing
+# tag/release policy below; a build is not permission to publish a new version.
 name: Windows installer
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
     branches: [main]
   release:
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing release tag to build and attach installers to (optional)'
+        description: "Existing release tag to build and attach installers to (optional)"
         required: false
         type: string
 
@@ -36,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
       - name: Verify release version
         env:
@@ -109,6 +111,12 @@ jobs:
           "$hash  $filename" | Set-Content -LiteralPath deployment/SHA256SUMS.txt
           Copy-Item -LiteralPath docs/TESTER_GUIDE.md -Destination deployment/TESTER_GUIDE.md
           Copy-Item -LiteralPath docs/PRIVACY.md -Destination deployment/PRIVACY.md
+          foreach ($document in @('NAVIGATION_REVIEWS_TEST.md', 'ANNOTATION_SYNC_TEST.md', 'ANNOTATION_SYNC_DESIGN.md', 'BOOKMARKS_TEST.md', 'LIFECYCLE_TEST.md', 'MINI_PLAYER_TEST.md', 'SECURITY_REVIEW.md')) {
+            Copy-Item -LiteralPath "docs/$document" -Destination "deployment/$document"
+          }
+          Copy-Item -LiteralPath SECURITY.md -Destination deployment/SECURITY.md
+          $privacyText = (Get-Content -LiteralPath deployment/PRIVACY.md -Raw).Replace('(../SECURITY.md)', '(SECURITY.md)')
+          Set-Content -LiteralPath deployment/PRIVACY.md -Value $privacyText -Encoding utf8
           Copy-Item -LiteralPath LICENSE -Destination deployment/LICENSE.txt
           $notes = "docs/RELEASE_NOTES_$version.md"
           if (Test-Path -LiteralPath $notes) { Copy-Item -LiteralPath $notes -Destination deployment/RELEASE_NOTES.md }

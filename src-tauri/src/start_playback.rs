@@ -1,3 +1,7 @@
+//! Pending automatic transition from official playback to the mini player.
+//! Requires matching book, ready full playback and a current request;
+//! cancellation prevents late callbacks from hiding the app unexpectedly.
+
 use std::sync::Mutex;
 pub struct StartPlayback(Mutex<Option<Pending>>);
 struct Pending {

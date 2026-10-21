@@ -1,3 +1,7 @@
+//! Website-session preference and explicit local-store erasure workflow.
+//! Stops/revokes active account work before cleanup; UI confirmation tokens and
+//! origin checks guard destructive operations.
+
 use serde::Serialize;
 use std::{
     fs,
@@ -14,7 +18,10 @@ pub fn remember(app: &tauri::AppHandle) -> bool {
 pub fn setup(app: &mut tauri::App) -> Result<(), String> {
     use rusqlite::OptionalExtension;
     let db = app.state::<crate::storage::Storage>().open()?;
-    db.execute_batch("CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);").map_err(|_| "Cannot initialize privacy preference")?;
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
+    )
+    .map_err(|_| "Cannot initialize privacy preference")?;
     let value: Option<String> = db
         .query_row(
             "SELECT value FROM preferences WHERE key='remember_website'",
@@ -67,7 +74,8 @@ pub async fn set_website_privacy(
             .map_err(|_| "Close the sign-in window and retry")?;
     }
     super::clear_official_session(&app)?;
-    app.state::<crate::storage::Storage>().open()?
+    app.state::<crate::storage::Storage>()
+        .open()?
         .execute(
             "INSERT OR REPLACE INTO preferences(key,value) VALUES('remember_website',?1)",
             [if remember_website { "true" } else { "false" }],
@@ -170,6 +178,9 @@ fn retry_remove(path: &Path) -> Result<(), String> {
     result
 }
 #[tauri::command]
+/// Validate explicit erase confirmation, stop active account/player work and
+/// arrange local cleanup. Never use this as an automatic login-recovery
+/// fallback.
 pub async fn erase_local_data(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -223,6 +234,8 @@ mod tests {
 }
 
 /// Disable browser-managed password saving and form autofill in provider views.
+/// Apply supported browser privacy controls to this hosted WebView; do not
+/// mistake these settings for protection from same-user malware.
 pub fn harden_view(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows::core::Interface;
     let owner = window.clone();
@@ -239,21 +252,40 @@ pub fn harden_view(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Wait for the actual platform completion, not merely submission of deletion.
 /// Called on async command workers, never in the Windows UI event handler.
 pub fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use webview2_com::{
+        ClearBrowsingDataCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13},
+    };
     use windows::core::Interface;
-    use webview2_com::{ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2_13, ICoreWebView2Profile2}};
     let (tx, rx) = std::sync::mpsc::channel();
-    window.with_webview(move |view| {
-        let failed = tx.clone();
-        let submitted = (|| -> windows::core::Result<()> { unsafe {
-            view.controller().CoreWebView2()?.cast::<ICoreWebView2_13>()?.Profile()?.cast::<ICoreWebView2Profile2>()?
-                .ClearBrowsingDataAll(&ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
-                    let _ = tx.send(result.is_ok()); Ok(())
-                })))?;
-        } Ok(()) })();
-        if submitted.is_err() { let _ = failed.send(false); }
-    }).map_err(|_| "Cannot start website data cleanup")?;
+    window
+        .with_webview(move |view| {
+            let failed = tx.clone();
+            let submitted = (|| -> windows::core::Result<()> {
+                unsafe {
+                    view.controller()
+                        .CoreWebView2()?
+                        .cast::<ICoreWebView2_13>()?
+                        .Profile()?
+                        .cast::<ICoreWebView2Profile2>()?
+                        .ClearBrowsingDataAll(&ClearBrowsingDataCompletedHandler::create(
+                            Box::new(move |result| {
+                                let _ = tx.send(result.is_ok());
+                                Ok(())
+                            }),
+                        ))?;
+                }
+                Ok(())
+            })();
+            if submitted.is_err() {
+                let _ = failed.send(false);
+            }
+        })
+        .map_err(|_| "Cannot start website data cleanup")?;
     match rx.recv_timeout(std::time::Duration::from_secs(30)) {
         Ok(true) => Ok(()),
-        _ => Err("Website data cleanup did not complete; retry sign-out before signing in again".into()),
+        _ => Err(
+            "Website data cleanup did not complete; retry sign-out before signing in again".into(),
+        ),
     }
 }

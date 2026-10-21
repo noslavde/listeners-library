@@ -1,3 +1,9 @@
+/**
+ * Regression tests covering mini player information. Uses synthetic fixtures;
+ * these checks do not verify real account sign-in, audio output or mobile
+ * synchronization.
+ */
+
 import { describe, it, expect } from "vitest";
 import { adjacentChapters, chapterInfo, finishTime } from "./playerInfo";
 import { safeCover } from "./Cover";

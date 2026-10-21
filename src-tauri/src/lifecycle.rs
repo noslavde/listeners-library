@@ -1,3 +1,7 @@
+//! Windows single-instance activation, hidden-window recovery and orderly
+//! shutdown. Closing the main app must end playback/process ownership rather
+//! than leave an inaccessible background instance.
+
 //! No tray mode: closing the library exits; launching again restores it.
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
@@ -174,6 +178,8 @@ mod tests {
         assert!(replacement.is_some());
     }
 }
+/// Recover the main window from hidden/minimized state and cancel pending
+/// automatic transitions before focusing it.
 pub fn restore(app: &tauri::AppHandle) {
     if closing() {
         return;
@@ -191,6 +197,8 @@ pub fn restore(app: &tauri::AppHandle) {
         }
     }
 }
+/// Coordinate idempotent shutdown: cancel launch intent, pause playback, flush
+/// confirmed progress and save placement before releasing process ownership.
 pub fn prepare_exit(app: &tauri::AppHandle) {
     if CLOSING.swap(true, Ordering::SeqCst) {
         return;

@@ -1,9 +1,19 @@
+/**
+ * Presents a book's observed, local and cloud positions using progressSummary.
+ * Conflicting positions remain visible rather than selecting the furthest
+ * position as a guess.
+ */
+
 import type { Book } from "./model";
 import type { CardPositions } from "./useCardPositions";
 import { progressSummary } from "./progress";
 function time(seconds: number) {
   return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(Math.floor(seconds) % 60).padStart(2, "0")}`;
 }
+/**
+ * Renders progress only when the saved/live values can be represented honestly;
+ * preserves conflict labels instead of showing a guessed position.
+ */
 export function CardProgress({
   book,
   saved,

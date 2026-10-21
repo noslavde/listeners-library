@@ -1,3 +1,8 @@
+//! Encrypted listening checkpoints, bounded history and startup conflict
+//! protection. Saves confirmed listening/explicit choices, holds startup when
+//! positions disagree and never treats metadata-read time as a cloud listening
+//! timestamp.
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::{
@@ -170,6 +175,8 @@ pub(crate) fn reset(app: &tauri::AppHandle) {
 
 // Only activity::credit-confirmed advancement enters this function. Loading,
 // polling a cloud position, and an unconfirmed seek never become "heard now".
+/// Credit confirmed natural listening observations; initial loading or paused
+/// telemetry must not overwrite an existing checkpoint.
 pub(crate) fn heard(app: &tauri::AppHandle, v: &super::PlayerState) -> Result<(), String> {
     let generation = super::metadata::account_generation(app)?;
     let pending = {
@@ -217,6 +224,8 @@ pub(crate) fn heard(app: &tauri::AppHandle, v: &super::PlayerState) -> Result<()
     }
     Ok(())
 }
+/// Persist pending confirmed position/history for a pause, switch or close; no
+/// new listening is invented merely because shutdown occurs.
 pub(crate) fn flush(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     let p = {
         let history = app.state::<History>();
@@ -334,6 +343,8 @@ fn seed(c: &Connection, asin: &str, duration: f64) -> Result<(), String> {
     c.execute_batch("RELEASE recovery_seed")
         .map_err(|_| "Cannot finish progress preservation".into())
 }
+/// Prepare a book/account-specific startup comparison before playback is
+/// released.
 pub(crate) fn prepare(app: &tauri::AppHandle, asin: &str, generation: u64) -> Result<(), String> {
     flush(app, "switch")?;
     super::metadata::with_account_db(app, generation, |c| {
@@ -365,6 +376,8 @@ pub(crate) fn blocked(app: &tauri::AppHandle) -> bool {
         .map(|s| s.gate.is_some())
         .unwrap_or(true)
 }
+/// Decide whether startup remains held for a saved-position choice; callers
+/// must honor this before auto-play or mini-window transitions.
 pub(crate) fn guard_start(app: &tauri::AppHandle, v: &super::PlayerState) -> bool {
     let mut announce = false;
     let held = {
@@ -478,6 +491,8 @@ pub fn listening_history(
         entries,
     })
 }
+/// Record an explicitly confirmed position choice, preserving a useful recovery
+/// trail rather than treating it as passive listening.
 pub(crate) fn chosen(
     app: &tauri::AppHandle,
     asin: &str,
@@ -543,6 +558,8 @@ pub fn accept_audible_position(
     chosen(&app, &asin, generation, revision)
 }
 #[tauri::command]
+/// Restore a selected dated checkpoint only after native seek confirmation for
+/// the same account/book/player lifetime.
 pub async fn restore_listening_position(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,

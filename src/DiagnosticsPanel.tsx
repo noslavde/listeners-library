@@ -1,7 +1,16 @@
+/**
+ * Review-before-export UI for the bounded diagnostic report. Shows exactly what
+ * will be saved locally, and never uploads reports automatically.
+ */
+
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { desktop } from "./playback";
 
+/**
+ * Loads the sanitized report for review and asks native code to export that
+ * same preview. No upload or background sharing is performed.
+ */
 export function DiagnosticsPanel() {
   const [preview, setPreview] = useState("");
   const [status, setStatus] = useState("");

@@ -1,0 +1,21 @@
+# Generated files, dependencies, local experiments and installers.
+node_modules/
+work/
+dist/
+deployment/
+releases/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/THIRD_PARTY_LICENSES.txt
+package-lock.json
+account-web-session/
+metadata-signin/
+*.db*
+*.sqlite*
+*.auth*
+*.sealed*
+.env*
+
+# Rust is formatted by rustfmt through the same npm commands.
+*.rs
+Cargo.lock

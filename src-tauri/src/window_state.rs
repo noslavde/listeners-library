@@ -1,3 +1,7 @@
+//! Window size/position/maximization persistence and close-event routing.
+//! Visibility is intentionally not restored; debounced placement checkpoints
+//! survive development restarts without recreating a hidden app.
+
 use std::{sync::mpsc, time::Duration};
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -6,6 +10,8 @@ pub(crate) const FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
 
+/// Persist placement/maximization for main/mini only; do not restore hidden
+/// visibility from a previous session.
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_window_state::Builder::default()
         .with_state_flags(FLAGS)
@@ -15,6 +21,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 struct Checkpoint(mpsc::Sender<()>);
 
+/// Register debounced placement checkpoints and close-event behavior, including
+/// development processes that may exit without a normal final event.
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let (tx, rx) = mpsc::channel();
     app.manage(Checkpoint(tx));

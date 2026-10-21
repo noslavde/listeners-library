@@ -1,3 +1,7 @@
+//! Experimental signed annotation-service transport. Native-only signing
+//! material is optional at registration, request/response sizes are bounded,
+//! redirects are rejected and account-generation checks surround network work.
+
 //! Fixed-origin device-signed annotation requests. Credentials never enter IPC.
 use super::*;
 use ring::{
@@ -80,6 +84,8 @@ fn sensitive(value: &str) -> Result<reqwest::header::HeaderValue, String> {
     h.set_sensitive(true);
     Ok(h)
 }
+/// Report only whether optional native signing material exists for the captured
+/// account; never return its token or private key.
 pub(crate) async fn available(app: &tauri::AppHandle, generation: u64) -> Result<bool, String> {
     with_account_generation(app, generation, || Ok(()))?;
     let state = app.state::<MetadataState>();
@@ -90,6 +96,9 @@ pub(crate) async fn available(app: &tauri::AppHandle, generation: u64) -> Result
             .is_some_and(|a| a.annotation_signing.is_some()))
     })
 }
+/// Sign and perform a bounded annotation request with redirects disabled and
+/// generation checks around network work. Return service data only to native
+/// reconciliation code.
 pub(crate) async fn request(
     app: &tauri::AppHandle,
     generation: u64,

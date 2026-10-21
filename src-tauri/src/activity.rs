@@ -1,3 +1,7 @@
+//! Meaningful-listening credit for the Continue shelf. Samples natural playback
+//! progression, rejects seek jumps and pins pending credit to the captured
+//! account generation before persistence.
+
 use serde::Serialize;
 use std::{sync::Mutex, time::Instant};
 use tauri::{Emitter, Manager};
@@ -55,6 +59,8 @@ pub fn reset(app: &tauri::AppHandle) {
         *tracker = (None, None);
     }
 }
+/// Flush pending listening credit for its captured account before abandoning
+/// the current sample.
 pub(crate) fn finish(app: &tauri::AppHandle) {
     if let Ok(mut tracker) = app.state::<Activity>().0.lock() {
         if let Some(p) = tracker.1.take() {
@@ -66,6 +72,8 @@ pub(crate) fn finish(app: &tauri::AppHandle) {
 fn write_activity(c: &rusqlite::Connection, p: &Pending) -> rusqlite::Result<usize> {
     c.execute("INSERT INTO listening_activity(asin,listened_seconds,last_listened,position,duration,hidden) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(asin) DO UPDATE SET listened_seconds=listened_seconds+excluded.listened_seconds,position=CASE WHEN excluded.last_listened>=last_listened THEN excluded.position ELSE position END,duration=excluded.duration,last_listened=MAX(last_listened,excluded.last_listened)",rusqlite::params![p.asin,p.seconds,p.last_listened,p.position,p.duration])
 }
+/// Count plausible natural playback deltas only; seeking and cloud refreshes
+/// must not populate Continue listening by themselves.
 pub fn observe(app: &tauri::AppHandle, s: &super::PlayerState) {
     let Ok(generation) = super::metadata::account_generation(app) else {
         return;

@@ -1,6 +1,6 @@
 {
   "name": "listeners-library",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "dev:desktop": "node scripts/native-build.mjs dev",
     "check:release": "node scripts/check-release.mjs",
     "test:native": "node scripts/native-build.mjs test",
-    "format:check": "prettier --check src/main.tsx src/MetadataPanel.tsx src/NotesPanel.tsx src/noteDrafts.ts src/progress.ts src/CardProgress.tsx src/ErrorBoundary.tsx src/MiniPlayer.tsx src/CoverArtwork.tsx src/ListeningHistory.tsx src/playerInfo.ts src/DiagnosticsPanel.tsx src/diagnostics.ts src/diagnostics.test.ts src/HighlightsPanel.tsx src/passages.ts src/passages.test.ts src/highlights.css src/annotationSync.css"
+    "format:check": "prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+    "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.0",

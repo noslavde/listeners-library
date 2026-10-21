@@ -1,3 +1,7 @@
+//! Account-scoped official-player launch history and callback-instance
+//! validation. Remembers only cleaned full-player URLs for a selected book;
+//! stale windows must not launch or update a later selection.
+
 use std::{
     collections::HashMap,
     sync::{
@@ -24,6 +28,8 @@ impl LaunchHistory {
         }
     }
 }
+/// Allocate a callback lifetime so events from a replaced official window
+/// cannot complete the newer book launch.
 pub(crate) fn next_instance(app: &tauri::AppHandle) -> u64 {
     app.state::<LaunchHistory>()
         .instance
@@ -33,6 +39,8 @@ pub(crate) fn next_instance(app: &tauri::AppHandle) -> u64 {
 pub(crate) fn active_instance(app: &tauri::AppHandle, id: u64) -> bool {
     app.state::<LaunchHistory>().instance.load(Ordering::SeqCst) == id
 }
+/// Accept only a cleaned official full-player URL for the requested ASIN; never
+/// retain arbitrary signed-in navigation URLs.
 pub fn clean_url(url: &url::Url, asin: &str) -> Option<url::Url> {
     if !super::allowed(url)
         || !matches!(url.host_str(), Some("audible.com" | "www.audible.com"))
@@ -100,6 +108,8 @@ pub fn searched(app: &tauri::AppHandle, asin: &str) {
         searches.insert(asin.to_owned());
     }
 }
+/// Remember a valid full-player launch after matching current account/book
+/// state; a sample is not a reusable owned-title route.
 pub fn observe(app: &tauri::AppHandle, state: &super::PlayerState) {
     let Ok(generation) = super::metadata::account_generation(app) else {
         return;

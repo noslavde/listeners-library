@@ -1,3 +1,7 @@
+//! Explicit per-account current-book pin. This selection survives playing a
+//! different title and stays separate from activity/history-derived Continue
+//! listening eligibility.
+
 use rusqlite::{Connection, OptionalExtension};
 use tauri::Emitter;
 

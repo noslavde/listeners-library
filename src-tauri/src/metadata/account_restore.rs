@@ -1,3 +1,7 @@
+//! Test-only compatibility parser for the retired first-build account-restore
+//! format. It is not exposed as a release recovery command; existing fixtures
+//! must never be replaced with real credentials.
+
 //! Explicit recovery of the first installer's locally saved account. Credentials
 //! stay native and are re-sealed before the current app reports a connection.
 use super::*;

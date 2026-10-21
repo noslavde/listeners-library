@@ -1,4 +1,14 @@
+/**
+ * Pure chapter-navigation and finish-time calculations. PreviousChapterIntent
+ * records rapid repeated presses separately from delayed telemetry so
+ * restart-then-previous behavior stays predictable.
+ */
+
 import type { Book, Snapshot, Chapter } from "./model";
+/**
+ * Normalizes and orders usable chapter entries for display/navigation without
+ * claiming they are currently seekable.
+ */
 export function orderedChapters(book: Book | undefined): Chapter[] {
   if (!book) return [];
   return (
@@ -15,6 +25,9 @@ export function orderedChapters(book: Book | undefined): Chapter[] {
     .sort((a, b) => a.start - b.start)
     .filter((c, i, all) => i === 0 || c.start !== all[i - 1].start);
 }
+/**
+ * Finds current/neighbor chapter metadata from an absolute book position.
+ */
 export function adjacentChapters(book: Book | undefined, position: number) {
   const chapters = orderedChapters(book);
   const index = chapters.reduce(
@@ -24,6 +37,11 @@ export function adjacentChapters(book: Book | undefined, position: number) {
   return { previous: chapters[index - 1], next: chapters[index + 1] };
 }
 // Track the requested chapter, rather than waiting for delayed player telemetry.
+/**
+ * Tracks a short repeat window: restart first, previous on rapid subsequent
+ * presses. Remembering the requested chapter avoids waiting for delayed native
+ * telemetry.
+ */
 export class PreviousChapterIntent {
   private last?: { asin: string; index: number; at: number };
   reset() {
@@ -46,6 +64,10 @@ export class PreviousChapterIntent {
     return { chapter: chapters[index], restart: !repeat || index === current };
   }
 }
+/**
+ * Computes current chapter bounds, progress and speed-aware remaining time for
+ * either player surface.
+ */
 export function chapterInfo(book: Book | undefined, s: Snapshot) {
   if (!book || !s.available || s.duration <= 0) return null;
   const chapters = orderedChapters(book).filter((c) => c.start < s.duration);
@@ -72,6 +94,10 @@ export function chapterInfo(book: Book | undefined, s: Snapshot) {
     percent: duration > 0 ? Math.round((position / duration) * 100) : 0,
   };
 }
+/**
+ * Estimates a wall-clock finish time from remaining book duration and speed; it
+ * is not a scheduled completion guarantee.
+ */
 export function finishTime(s: Snapshot, now = Date.now()) {
   return (
     now + (Math.max(0, s.duration - s.position) / Math.max(0.5, s.speed)) * 1000

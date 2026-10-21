@@ -1,3 +1,7 @@
+//! Shared native player state and main/mini window commands. PlayerHub
+//! revisions invalidate stale control work; fresh official-player observations
+//! are distinct from persisted listening checkpoints.
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -65,8 +69,12 @@ pub(crate) fn reset_player(app: &tauri::AppHandle) -> Result<(), String> {
     let _ = app.emit("current-book-changed", ());
     Ok(())
 }
+/// Accept commands only from an allowlisted local main/mini window. Remote
+/// Audible pages are not general-purpose IPC clients.
 pub fn player_local(w: &tauri::WebviewWindow) -> Result<(), String> {
-    if !matches!(w.label(), "main" | "mini-player") || !w.url().is_ok_and(|u|super::local_origin(&u)) {
+    if !matches!(w.label(), "main" | "mini-player")
+        || !w.url().is_ok_and(|u| super::local_origin(&u))
+    {
         return Err("Local player UI required".into());
     }
     Ok(())
@@ -84,35 +92,41 @@ pub fn select_api_title(
     selected(&app, &asin)
 }
 pub fn selected(app: &tauri::AppHandle, asin: &str) -> Result<(), String> {
-    let generation=super::metadata::account_generation(app)?;
-    selected_in_session(app,asin,generation)
+    let generation = super::metadata::account_generation(app)?;
+    selected_in_session(app, asin, generation)
 }
-pub(crate) fn selected_in_session(app:&tauri::AppHandle,asin:&str,generation:u64)->Result<(),String>{
-    super::metadata::with_account_generation(app,generation,||Ok(()))?;
+pub(crate) fn selected_in_session(
+    app: &tauri::AppHandle,
+    asin: &str,
+    generation: u64,
+) -> Result<(), String> {
+    super::metadata::with_account_generation(app, generation, || Ok(()))?;
     super::cover::dismiss(app);
     super::listening::cancel_sleep(app);
-    super::metadata::with_account_db(app,generation,|c|{
-    let raw = c
-        .query_row("SELECT metadata FROM books WHERE asin=?1", [asin], |r| {
-            r.get::<_, String>(0)
-        })
-        .ok();
-    let book=raw.and_then(|s|serde_json::from_str::<Value>(&s).ok()).unwrap_or_else(||json!({"asin":asin,"title":"Audible title","author":"","series":"","volume":0,"duration":0,"chapters":[]}));
-    let state = app.state::<PlayerHub>();
-    let mut current = state.0.lock().map_err(|_| "Player state unavailable")?;
-    state.changed();
-    *current = NowPlaying {
-        book: Some(book.clone()),
-        snapshot: None,
-        last_seen: None,
-    };
-    drop(current);
-    for label in ["main", "mini-player"] {
-        let _ = app.emit_to(label, "player-book", book.clone());
-    }
-    Ok(())
+    super::metadata::with_account_db(app, generation, |c| {
+        let raw = c
+            .query_row("SELECT metadata FROM books WHERE asin=?1", [asin], |r| {
+                r.get::<_, String>(0)
+            })
+            .ok();
+        let book=raw.and_then(|s|serde_json::from_str::<Value>(&s).ok()).unwrap_or_else(||json!({"asin":asin,"title":"Audible title","author":"","series":"","volume":0,"duration":0,"chapters":[]}));
+        let state = app.state::<PlayerHub>();
+        let mut current = state.0.lock().map_err(|_| "Player state unavailable")?;
+        state.changed();
+        *current = NowPlaying {
+            book: Some(book.clone()),
+            snapshot: None,
+            last_seen: None,
+        };
+        drop(current);
+        for label in ["main", "mini-player"] {
+            let _ = app.emit_to(label, "player-book", book.clone());
+        }
+        Ok(())
     })
 }
+/// Update live player observations and freshness under the hub lock;
+/// persistence/credit policies belong to history and activity modules.
 pub fn record(app: &tauri::AppHandle, s: &super::PlayerState) {
     if !super::metadata::connected(app) {
         return;
@@ -141,6 +155,8 @@ pub struct SavedPosition {
     updated: i64,
 }
 #[tauri::command]
+/// Return account-scoped saved card positions without fetching the network or
+/// pretending a cached timestamp is a mobile listening time.
 pub fn list_card_positions(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -204,6 +220,8 @@ pub fn local_position(
         .map_err(|_| "Cannot read saved position".into())
 }
 #[tauri::command]
+/// Provide the selected book and live snapshot to a trusted local player
+/// surface.
 pub fn current_player(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -231,8 +249,12 @@ pub async fn open_mini_player(
     super::local(&window)?;
     enter_mini_player(app).await
 }
+/// Show a usable mini window before hiding the main/official windows,
+/// preserving a visible recovery route if creation fails.
 pub(crate) async fn enter_mini_player(app: tauri::AppHandle) -> Result<(), String> {
-    if crate::lifecycle::closing() { return Err("The app is closing".into()); }
+    if crate::lifecycle::closing() {
+        return Err("The app is closing".into());
+    }
     super::metadata::require_account(&app)?;
     if let Some(w) = app.get_webview_window("mini-player") {
         w.unminimize().map_err(|_| "Cannot restore mini player")?;
@@ -312,10 +334,15 @@ pub fn resize_mini_player(window: tauri::WebviewWindow, panel: String) -> Result
         .map_err(|_| "Cannot resize player".into())
 }
 fn hide_ready_official(app: &tauri::AppHandle) -> Result<(), String> {
-    if crate::lifecycle::closing() { return Err("The app is closing".into()); }
+    if crate::lifecycle::closing() {
+        return Err("The app is closing".into());
+    }
     // Never hide the library unless its replacement is actually visible.
-    let mini = app.get_webview_window("mini-player").ok_or("Mini player closed")?;
-    mini.unminimize().map_err(|_| "Cannot restore mini player")?;
+    let mini = app
+        .get_webview_window("mini-player")
+        .ok_or("Mini player closed")?;
+    mini.unminimize()
+        .map_err(|_| "Cannot restore mini player")?;
     mini.show().map_err(|_| "Cannot show mini player")?;
     let ready = app
         .state::<PlayerHub>()

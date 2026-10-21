@@ -1,3 +1,7 @@
+//! Windows media-session integration for hardware/headset controls. Routes
+//! supported actions into the same native shortcut path and updates display
+//! state from player observations.
+
 use tauri::Manager;
 #[cfg(windows)]
 use windows::{

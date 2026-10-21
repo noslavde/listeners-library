@@ -1,1 +1,6 @@
-{"identifier":"mini-player","description":"Local mini player event subscription only; native commands enforce player-only access.","windows":["mini-player"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}
+{
+  "identifier": "mini-player",
+  "description": "Local mini player event subscription only; native commands enforce player-only access.",
+  "windows": ["mini-player"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

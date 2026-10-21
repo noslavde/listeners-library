@@ -1,3 +1,7 @@
+//! Bounded privacy-filtered diagnostic journal and user-reviewed export.
+//! Records allowlisted codes and relative timing only; unclean termination is a
+//! clue, not proof of a crash, and no report is automatically uploaded.
+
 //! Deliberately lossy diagnostics. No free-form message or private data fields.
 use serde::{Deserialize, Serialize};
 use std::{
@@ -116,12 +120,16 @@ pub fn initialize(root: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+/// Record a fixed panic code on a best-effort basis without storing panic
+/// payloads or stack traces.
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|_| {
         // Panic payloads and source paths can contain secrets. Never copy them.
         record(Code::RustPanic);
     }));
 }
+/// Append an allowlisted diagnostic code only; never add an overload that
+/// accepts raw error strings, URLs or user content.
 pub fn record(code: Code) {
     let Some(recorder) = RECORDER.get() else {
         return;
@@ -171,6 +179,8 @@ pub fn record_ui_error(window: tauri::WebviewWindow, code: Code) -> Result<(), S
     Ok(())
 }
 #[tauri::command]
+/// Save only a report the user has reviewed, rejecting stale previews and
+/// automatic uploads.
 pub async fn export_diagnostics(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,

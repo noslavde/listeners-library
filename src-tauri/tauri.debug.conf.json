@@ -1,1 +1,13 @@
-{"app":{"windows":[{"label":"main","devtools":true,"title":"Listener’s Library · development","width":1280,"height":850}]}}
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "devtools": true,
+        "title": "Listener’s Library · development",
+        "width": 1280,
+        "height": 850
+      }
+    ]
+  }
+}

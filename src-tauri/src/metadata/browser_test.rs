@@ -1,3 +1,7 @@
+//! Development-only local HTTP comparison host for ordinary-browser protected
+//! playback. Pairing and same-origin checks constrain access; this is an
+//! experiment, not a public credential-sharing endpoint.
+
 //! Temporary same-origin loopback bridge. Never exposes account tokens or a
 //! generic HTTP/API proxy. Browser and WebView use the same streaming core.
 use super::*;

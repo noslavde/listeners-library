@@ -1,3 +1,7 @@
+//! Native app/global shortcut registration and action dispatch. Commands use
+//! current player/account checks and publish fixed notices instead of
+//! persisting typed user input.
+
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
@@ -32,6 +36,9 @@ pub fn snapshot(app: &tauri::AppHandle) -> Option<super::PlayerState> {
         })
         .cloned()
 }
+/// Route supported shortcut names through validated native
+/// playback/saved-moment actions; do not infer targets from stale frontend
+/// state.
 pub fn dispatch(app: &tauri::AppHandle, action: &str) -> Result<(), String> {
     super::metadata::require_account(app)?;
     if action == "mini" {
@@ -51,10 +58,10 @@ pub fn dispatch(app: &tauri::AppHandle, action: &str) -> Result<(), String> {
         });
         return Ok(());
     }
-    let generation=super::metadata::account_generation(app)?;
+    let generation = super::metadata::account_generation(app)?;
     let s = snapshot(app).ok_or("Wait for full-book playback before using this shortcut")?;
     if action == "bookmark" {
-        crate::highlights::quick_bookmark(app,generation,&s)?;
+        crate::highlights::quick_bookmark(app, generation, &s)?;
         let _ = app.emit_to("main", "notes-changed", ());
         let _ = app.emit_to(
             "main",
@@ -64,9 +71,13 @@ pub fn dispatch(app: &tauri::AppHandle, action: &str) -> Result<(), String> {
         let _ = app.emit_to("mini-player", "shortcut-notice", "Bookmark saved");
         return Ok(());
     }
-    if action=="clip" {
-        crate::highlights::quick_clip(app,generation,&s)?;
-        let _=app.emit_to("mini-player","shortcut-notice","Saved the last 30 seconds as a clip (or the available time at the start)");
+    if action == "clip" {
+        crate::highlights::quick_clip(app, generation, &s)?;
+        let _ = app.emit_to(
+            "mini-player",
+            "shortcut-notice",
+            "Saved the last 30 seconds as a clip (or the available time at the start)",
+        );
         return Ok(());
     }
     let (command, value) = match action {

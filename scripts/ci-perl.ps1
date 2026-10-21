@@ -1,3 +1,7 @@
+# CI setup for the pinned Windows Perl distribution used by bundled OpenSSL.
+# Verifies the downloaded archive before extraction and exposes the selected
+# executable to later native build steps.
+
 $ErrorActionPreference = 'Stop'
 # Official Strawberry Perl manifest:
 # https://raw.githubusercontent.com/StrawberryPerl/strawberryperl.com/gh-pages/releases.json

@@ -1,3 +1,7 @@
+//! Synthetic regression fixtures for account registration and callback parsing.
+//! Tests protect request/profile behavior without signing into Amazon or
+//! storing a real account.
+
 //! Fresh-account regression tests. No provider account or real credentials.
 use super::*;
 use std::{
@@ -5,7 +9,8 @@ use std::{
     net::TcpListener,
 };
 fn pending() -> Pending {
-    Pending { annotation_signing: false,
+    Pending {
+        annotation_signing: false,
         profile: Profile::default(),
         verifier: URL_SAFE_NO_PAD.encode([7u8; 32]),
         serial: "synthetic-device-serial".into(),
@@ -19,12 +24,20 @@ fn response() -> Value {
 #[test]
 fn account_namespaces_follow_provider_identity_without_exposing_it() {
     let mut a = response();
-    a["response"]["success"]["extensions"]["customer_info"] = json!({"user_id":"synthetic-account-A"});
+    a["response"]["success"]["extensions"]["customer_info"] =
+        json!({"user_id":"synthetic-account-A"});
     let first = registration_auth(&a, Profile::Ios).unwrap().namespace();
     a["response"]["success"]["tokens"]["bearer"]["refresh_token"] = json!("different-registration");
-    assert_eq!(registration_auth(&a, Profile::Ios).unwrap().namespace(), first);
-    a["response"]["success"]["extensions"]["customer_info"]["user_id"] = json!("synthetic-account-B");
-    assert_ne!(registration_auth(&a, Profile::Ios).unwrap().namespace(), first);
+    assert_eq!(
+        registration_auth(&a, Profile::Ios).unwrap().namespace(),
+        first
+    );
+    a["response"]["success"]["extensions"]["customer_info"]["user_id"] =
+        json!("synthetic-account-B");
+    assert_ne!(
+        registration_auth(&a, Profile::Ios).unwrap().namespace(),
+        first
+    );
     assert_eq!(first.len(), 64);
     assert!(!first.contains("synthetic"));
     let old = registration_auth(&response(), Profile::Ios).unwrap();
@@ -208,14 +221,24 @@ fn failed_protected_save_or_cancelled_exchange_cannot_connect() {
 }
 
 #[test]
-fn stale_note_session_is_rejected_even_after_another_account_connects(){
-    let runtime=tokio::runtime::Builder::new_current_thread().build().unwrap();
-    runtime.block_on(async{
-        let state=MetadataState::with_auth(Some(registration_auth(&response(),Profile::Ios).unwrap()));
+fn stale_note_session_is_rejected_even_after_another_account_connects() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let state =
+            MetadataState::with_auth(Some(registration_auth(&response(), Profile::Ios).unwrap()));
         assert!(state.guard_generation(0).is_ok());
-        state.generation.store(1,Ordering::SeqCst);
+        state.generation.store(1, Ordering::SeqCst);
         assert!(state.guard_generation(0).is_err());
-        state.finish_registration(1,registration_auth(&response(),Profile::Ios).unwrap(), |_|Ok(())).await.unwrap();
+        state
+            .finish_registration(
+                1,
+                registration_auth(&response(), Profile::Ios).unwrap(),
+                |_| Ok(()),
+            )
+            .await
+            .unwrap();
         assert!(state.connected());
         assert!(state.guard_generation(0).is_err());
         assert!(state.guard_generation(1).is_ok());

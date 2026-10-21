@@ -1,4 +1,4 @@
-# Privacy and local data — 0.2.6 beta
+# Privacy and local data — 0.2.7 beta
 
 Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or app-operated notes server. Audible/Amazon receive normal account and playback requests, optional annotation-sync requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
 
@@ -49,3 +49,7 @@ Diagnostics are best effort. They distinguish incomplete shutdown from clean exi
 Windows-user encryption is not an app-exclusive vault. Malware running as you, an administrator or a compromised operating system can access decrypted data. Files can still be copied even if their contents cannot ordinarily be read elsewhere. No claim of absolute nontransferability or forensic erasure is made. The unsigned beta has not received an independent security audit.
 
 Remote provider windows have no local app capabilities. Native tokens are not returned to website JavaScript or React. Diagnostic messages contain bounded locally defined stages, not raw provider responses or credentials. Never attach credentials, account files, cookies, keys, signed-in URLs or full browser logs to a report. Read [Security policy](../SECURITY.md) and [validation evidence](SECURITY_REVIEW.md).
+
+## Local ratings and reviews
+
+Your book ratings and review text are stored only in the account’s encrypted local database. They are not sent to Audible, included in notes exports, or recorded in diagnostics. Sign-out hides them; another account cannot access them. Erasing the local store also removes them. Unsaved drafts exist only in this window’s memory and are cleared on sign-out or close.

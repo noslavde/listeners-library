@@ -1,3 +1,7 @@
+//! Account-pinned saved-note reads, compatibility commands and reviewed local
+//! exports. Exports deliberately produce readable private content and require
+//! explicit confirmation; diagnostics never include these note bodies.
+
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
@@ -93,6 +97,8 @@ fn with_db<T>(
 }
 
 #[tauri::command]
+/// Expose only the active account lifetime token to trusted player UI so
+/// subsequent note/review commands cannot drift across account changes.
 pub fn notes_session(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<u64, String> {
     super::desktop::player_local(&window)?;
     super::metadata::account_generation(&app)
@@ -175,6 +181,8 @@ fn change(
     Ok(())
 }
 
+/// Write a deliberate readable export using a temporary file and atomic
+/// replacement; callers must validate the account/preview before invoking it.
 pub(crate) fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::{fs, fs::OpenOptions, io::Write};
     crate::storage::reject_link(path)?;
@@ -235,6 +243,8 @@ pub fn delete_note(
 }
 
 #[tauri::command]
+/// Require local UI and explicit export confirmation, then recheck account
+/// identity after the save dialog before writing private readable content.
 pub async fn export_notes(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,

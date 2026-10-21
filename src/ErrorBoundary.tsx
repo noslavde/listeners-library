@@ -1,7 +1,16 @@
+/**
+ * Last-resort React render failure screen. Reports only a fixed error code and
+ * offers recovery without resetting saved data or exposing exception details.
+ */
+
 import { Component, type ReactNode } from "react";
 import { reportUiError } from "./diagnostics";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 
+/**
+ * Contains render failures without deleting local state; diagnostics receive a
+ * category code rather than the exception or React component stack.
+ */
 export class ErrorBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }

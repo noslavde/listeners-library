@@ -1,3 +1,10 @@
+/**
+ * Bookmarks, clip ranges and timestamped notes UI, including explicit
+ * experimental Audible annotation sync. Keeps drafts per book, pins requests to
+ * an account generation, and preserves separate local/cloud versions on
+ * conflict.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -33,6 +40,11 @@ const syncLabels = {
   "remote-missing": "Missing on Audible · PC copy kept",
   unverified: "Send outcome unverified · refresh first",
 };
+/**
+ * Owns per-book drafts and explicit saved-moment actions. Keep
+ * generation/revision checks around every async result; local edits, replay and
+ * optional cloud writes have different effects.
+ */
 export function HighlightsPanel({
   books,
   active,
@@ -52,6 +64,8 @@ export function HighlightsPanel({
     [status, setStatus] = useState(""),
     [deleting, setDeleting] = useState<number>(),
     [confirmation, setConfirmation] = useState(""),
+    // Replay changes the real player timeline. Preserve one original return
+    // point rather than replacing it on every consecutive clip preview.
     [returnPoint, setReturnPoint] = useState<{
       asin: string;
       position: number;

@@ -1,3 +1,7 @@
+//! Explicit Audible-position fetch and confirmed seeking. Pins account, book
+//! and player revision across async work; manual controls or a session change
+//! cancel the pending result rather than apply it to a new player.
+
 use serde::Serialize;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
@@ -56,6 +60,9 @@ pub struct SyncResult {
 /// Read the provider first. Never publish a local checkpoint as part of a handoff.
 /// Every asynchronous boundary rechecks both the account and the player revision.
 #[tauri::command]
+/// Fetch Audible's saved position, then confirm a seek in the same fresh
+/// full-title player. Cancel if account, title, revision or manual controls
+/// change.
 pub async fn resync_player(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -87,6 +94,8 @@ pub async fn resync_player(
     super::history::chosen(&app, &asin, generation, revision)?;
     Ok(SyncResult { position })
 }
+/// Shared confirmed-seek path for saved moments/recovery. Capture WebView
+/// identity outside account/player locks to avoid UI-thread lock inversion.
 pub(crate) async fn seek_saved_position(
     app: &tauri::AppHandle,
     asin: &str,
@@ -101,6 +110,8 @@ pub(crate) async fn seek_saved_position(
     })?;
     apply_position(app, asin, generation, revision, position).await
 }
+/// Validate the actual full-player page, send a seek, then await matching fresh
+/// telemetry. Sending JavaScript successfully is not confirmation that it sought.
 async fn apply_position(
     app: &tauri::AppHandle,
     asin: &str,

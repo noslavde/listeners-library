@@ -1,3 +1,7 @@
+//! Native preparation of the separate Audible website session from account
+//! context. Cookies remain native/browser-side; website verification may still
+//! be required even when library API authentication succeeds.
+
 //! Account-owned website session exchange. Cookies stay in native memory and
 //! the dedicated private US Amazon/Audible WebView; never in frontend IPC.
 use super::*;

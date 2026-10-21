@@ -1,3 +1,8 @@
+//! Development-only protected-stream grant, fetch and license-relay experiment.
+//! Keeps native session context and bounded network responses; a granted
+//! entitlement is not evidence that the platform license challenge will be
+//! accepted.
+
 //! Protected streaming through the platform CDM. No content keys leave the CDM.
 use super::*;
 #[derive(Clone)]

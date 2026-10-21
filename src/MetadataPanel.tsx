@@ -1,3 +1,9 @@
+/**
+ * Account connection and library-sync UI. Passwords are entered on official
+ * Amazon pages; this component receives status and invokes native commands
+ * rather than handling credentials.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -18,6 +24,11 @@ const active = (phase?: string) =>
   ["signing-in", "restoring", "registering", "saving", "signing-out"].includes(
     phase ?? "",
   );
+/**
+ * Tracks native connection phases, triggers/coalesces library refreshes and
+ * exposes optional annotation-signing registration without handling a password
+ * in React.
+ */
 export function MetadataPanel({
   onLibrary,
   onStatus,

@@ -1,1 +1,6 @@
-{"identifier":"main","description":"Local UI only. Official remote pages have no Tauri capabilities.","windows":["main"],"permissions":["core:default"]}
+{
+  "identifier": "main",
+  "description": "Local UI only. Official remote pages have no Tauri capabilities.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

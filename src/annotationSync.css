@@ -1,3 +1,9 @@
+/**
+ * Explicit annotation-sync status and conflict-review styles. Badge classes are
+ * distinct from conflict-container classes to prevent unrelated layout rules
+ * from leaking into status labels.
+ */
+
 .annotation-sync-panel {
   display: flex;
   align-items: center;

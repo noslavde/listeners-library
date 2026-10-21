@@ -1,3 +1,9 @@
+/**
+ * Shared compact playback controls for the mini window and embedded main
+ * player. Embedded mode suppresses mini-only dragging, resizing and duplicate
+ * keyboard listeners; playback and persistence remain native responsibilities.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -24,7 +30,12 @@ import { ThemePicker } from "./ThemePicker";
 import { VolumeControl } from "./VolumeControl";
 import { ListeningHistoryPanel, useListeningHistory } from "./ListeningHistory";
 type Panel = "none" | "chapters" | "sleep" | "settings" | "history";
-export function MiniPlayer() {
+/**
+ * Renders one shared control surface. embedded changes window-management
+ * behavior only; do not create a second audio element or independent playback
+ * clock here.
+ */
+export function MiniPlayer({ embedded = false }: { embedded?: boolean }) {
   const adapter = useMemo(() => new OfficialAdapter(), []),
     settings = useListening(),
     current = useCurrentBook();
@@ -52,11 +63,12 @@ export function MiniPlayer() {
     if (key === reviewShown.current) return;
     reviewShown.current = key;
     setPanel("history");
-    void invoke("resize_mini_player", { panel: "history" }).catch((e) =>
-      setError(String(e)),
-    );
+    if (!embedded)
+      void invoke("resize_mini_player", { panel: "history" }).catch((e) =>
+        setError(String(e)),
+      );
   }, [history.status?.conflict, book?.asin]);
-  usePlayerShortcuts(setError);
+  usePlayerShortcuts(setError, !embedded);
   const run = async (f: () => Promise<unknown>) => {
     setError("");
     setNotice("");
@@ -150,7 +162,7 @@ export function MiniPlayer() {
       if (next === "history") previousIntent.current.reset();
       const value = panel === next ? "none" : next;
       setPanel(value);
-      await invoke("resize_mini_player", { panel: value });
+      if (!embedded) await invoke("resize_mini_player", { panel: value });
     });
   const chapter = chapterInfo(book, s),
     chapterMode = settings.preferences.progressMode === "chapter" && !!chapter;
@@ -168,7 +180,10 @@ export function MiniPlayer() {
       : "Chapter end"
     : "Sleep";
   return (
-    <div className="mini mini-compact">
+    <div
+      className={`mini mini-compact${embedded ? " main-player" : ""}`}
+      aria-label={embedded ? "Main player" : "Mini player"}
+    >
       <div className="mini-header">
         {book && (
           <button
@@ -183,9 +198,10 @@ export function MiniPlayer() {
         )}
         <div
           className="mini-book mini-drag"
-          title="Drag to move"
+          title={embedded ? undefined : "Drag to move"}
           onPointerDown={(e) => {
-            if (e.button === 0) void run(() => invoke("drag_mini_player"));
+            if (!embedded && e.button === 0)
+              void run(() => invoke("drag_mini_player"));
           }}
         >
           <div>
@@ -197,9 +213,19 @@ export function MiniPlayer() {
         </div>
         <button
           className="mini-return"
-          aria-label="Close mini player and return to app"
-          title="Back to app; audio keeps playing"
-          onClick={() => run(() => invoke("close_mini_player"))}
+          aria-label={
+            embedded
+              ? "Open mini player"
+              : "Close mini player and return to app"
+          }
+          title={
+            embedded ? "Open mini player" : "Back to app; audio keeps playing"
+          }
+          onClick={() =>
+            run(() =>
+              invoke(embedded ? "open_mini_player" : "close_mini_player"),
+            )
+          }
         >
           ↗
         </button>
@@ -343,7 +369,7 @@ export function MiniPlayer() {
         </div>
       </div>
       <VolumeControl
-        compact
+        compact={!embedded}
         value={settings.preferences.volume}
         onChange={(v) =>
           s.available
@@ -459,7 +485,7 @@ export function MiniPlayer() {
                 Show Audible player
               </button>
               <p className="mini-version">
-                Listener’s Library · 0.2.6 · Unofficial beta
+                Listener’s Library · 0.2.7 · Unofficial beta
               </p>
             </>
           )}

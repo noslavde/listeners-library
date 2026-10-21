@@ -1,3 +1,7 @@
+//! Development-only progress-upload experiment with explicit prepare/commit
+//! steps. Separates inspection from a deliberate service write and is not the
+//! shipped official player's ordinary progress-sync path.
+
 //! Explicit one-shot last-position test. No automatic account writes.
 use super::*;
 pub(super) struct PreparedUpload {

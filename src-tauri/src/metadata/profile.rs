@@ -1,3 +1,7 @@
+//! Account-registration profile constants and request construction. API device
+//! identity is separate from the browser's DRM identity; changing a profile
+//! does not establish trusted protected playback.
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

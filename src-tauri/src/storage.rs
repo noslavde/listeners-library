@@ -1,3 +1,8 @@
+//! Encrypted local storage and verified legacy migration. Per-scope SQLCipher
+//! keys are randomly generated and Windows-protected; profile databases are
+//! account-isolated, writes are bounded/atomic where required, and missing keys
+//! never trigger plaintext fallback.
+
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
@@ -24,6 +29,8 @@ pub struct Storage {
 fn fail(_: impl std::fmt::Display) -> String {
     "Encrypted storage operation failed. Your existing data was kept; close older app versions and retry.".into()
 }
+/// Reject reparse/linked storage paths before trusting a local path as an owned
+/// data store.
 pub(crate) fn reject_link(path: &Path) -> Result<(), String> {
     if fs::symlink_metadata(path)
         .map(|m| m.file_attributes() & 0x400 != 0)
@@ -200,6 +207,9 @@ fn migrate(legacy: &Path, dir: &Path, key: &[u8]) -> Result<(), String> {
     Ok(())
 }
 impl Storage {
+    /// Establish the exclusive store lock, protected key and supported
+    /// migration state. Fail without replacing existing data when ownership,
+    /// key or verification checks fail.
     pub fn initialize(root: &Path, import_legacy: bool) -> Result<Self, String> {
         reject_link(root)?;
         fs::create_dir_all(root).map_err(fail)?;
@@ -254,16 +264,24 @@ impl Storage {
         load_account_blob(&self.dir)
     }
     pub(crate) fn load_restorable_account(&self) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
-        if self.restore_blocked() { Ok(None) } else { self.load_account_bytes() }
+        if self.restore_blocked() {
+            Ok(None)
+        } else {
+            self.load_account_bytes()
+        }
     }
     pub fn open(&self) -> Result<Connection, String> {
         reject_link(&self.dir)?;
         reject_link(&self.dir.join("library.sqlite"))?;
         connect(&self.dir.join("library.sqlite"), &self.key)
     }
+    /// Open the explicitly selected encrypted namespace; None refers to the
+    /// shared settings/legacy store, not an inferred account.
     pub fn open_profile(&self, namespace: Option<&str>) -> Result<Connection, String> {
         let name = match namespace {
-            Some(key) if key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit()) => format!("account-{key}.sqlite"),
+            Some(key) if key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                format!("account-{key}.sqlite")
+            }
             Some(_) => return Err("Invalid account storage context".into()),
             None => "settings.sqlite".into(),
         };
@@ -272,20 +290,28 @@ impl Storage {
         reject_link(&path)?;
         connect(&path, &self.key)
     }
+    /// Persist a sign-out marker before removing credentials so a cleanup
+    /// interruption cannot silently reconnect the account.
     pub fn block_account_restore(&self) -> Result<(), String> {
         let path = self.dir.join("signed-out");
         reject_link(&path)?;
-        if !path.exists() { write_new(&path, b"1")?; }
+        if !path.exists() {
+            write_new(&path, b"1")?;
+        }
         Ok(())
     }
     pub fn restore_blocked(&self) -> bool {
         // Any metadata error other than absence must fail closed.
         !matches!(fs::symlink_metadata(self.dir.join("signed-out")), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
     }
+    /// Clear the durable sign-out block only after a protected account has been
+    /// saved and verified.
     pub fn allow_account_restore(&self) -> Result<(), String> {
         let path = self.dir.join("signed-out");
         reject_link(&path)?;
-        if path.exists() { fs::remove_file(path).map_err(fail)?; }
+        if path.exists() {
+            fs::remove_file(path).map_err(fail)?;
+        }
         Ok(())
     }
 }
@@ -317,6 +343,8 @@ fn load_account_blob(dir: &Path) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
     }
     crate::protection::unprotect(&fs::read(path).map_err(fail)?).map(Some)
 }
+/// Remove stored account credentials; encrypted per-account library/history
+/// data is a separate retention concern.
 pub fn forget_account(app: &tauri::AppHandle) -> Result<(), String> {
     let dir = data_dir(app)?;
     for name in ["account.sealed", "account.sealed.new"] {
@@ -338,7 +366,8 @@ mod tests {
     fn account_databases_are_isolated_and_old_unassigned_data_is_not_imported() {
         let root = temp();
         let store = Storage::initialize(&root, false).unwrap();
-        let a = "a".repeat(64); let b = "b".repeat(64);
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
         let legacy = store.open().unwrap();
         legacy.execute_batch("CREATE TABLE notes(text TEXT); INSERT INTO notes VALUES('unassigned legacy note');").unwrap();
         drop(legacy);
@@ -349,33 +378,57 @@ mod tests {
         }
         // Returning to A preserves A's data, without B's or the legacy database.
         let c = store.open_profile(Some(&a)).unwrap();
-        assert_eq!(c.query_row("SELECT group_concat(text) FROM notes", [], |r| r.get::<_,String>(0)).unwrap(), "account A note");
+        assert_eq!(
+            c.query_row("SELECT group_concat(text) FROM notes", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "account A note"
+        );
         drop(c);
         assert!(store.open_profile(Some("../library")).is_err());
         let bytes = fs::read(store.dir.join(format!("account-{a}.sqlite"))).unwrap();
         assert!(!bytes.windows(14).any(|b| b == b"account A note"));
         drop(store);
         let store = Storage::initialize(&root, false).unwrap();
-        assert_eq!(store.open_profile(Some(&b)).unwrap().query_row("SELECT text FROM notes", [], |r| r.get::<_,String>(0)).unwrap(), "account B note");
-        drop(store); fs::remove_dir_all(root).unwrap();
+        assert_eq!(
+            store
+                .open_profile(Some(&b))
+                .unwrap()
+                .query_row("SELECT text FROM notes", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "account B note"
+        );
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn signed_out_marker_blocks_leftover_credentials_across_restart_until_fresh_save() {
         let root = temp();
         let store = Storage::initialize(&root, false).unwrap();
-        store.save_account_bytes(b"synthetic old credential").unwrap();
+        store
+            .save_account_bytes(b"synthetic old credential")
+            .unwrap();
         store.block_account_restore().unwrap();
         // Simulate credential deletion failing: leave the sealed file in place.
         assert!(store.dir.join("account.sealed").exists());
         drop(store);
         let store = Storage::initialize(&root, false).unwrap();
         assert!(store.load_restorable_account().unwrap().is_none());
-        store.save_account_bytes(b"synthetic fresh sign-in").unwrap();
+        store
+            .save_account_bytes(b"synthetic fresh sign-in")
+            .unwrap();
         assert!(store.load_restorable_account().unwrap().is_none());
-        assert_eq!(store.load_account_bytes().unwrap().unwrap().as_slice(), b"synthetic fresh sign-in");
+        assert_eq!(
+            store.load_account_bytes().unwrap().unwrap().as_slice(),
+            b"synthetic fresh sign-in"
+        );
         store.allow_account_restore().unwrap();
-        assert_eq!(store.load_restorable_account().unwrap().unwrap().as_slice(), b"synthetic fresh sign-in");
-        drop(store); fs::remove_dir_all(root).unwrap();
+        assert_eq!(
+            store.load_restorable_account().unwrap().unwrap().as_slice(),
+            b"synthetic fresh sign-in"
+        );
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
     }
     fn temp() -> PathBuf {
         let p =

@@ -1,3 +1,9 @@
+/**
+ * Regression tests covering restart and previous chapter intent. Uses synthetic
+ * fixtures; these checks do not verify real account sign-in, audio output or
+ * mobile synchronization.
+ */
+
 import { describe, it, expect } from "vitest";
 import { PreviousChapterIntent } from "./playerInfo";
 import { demoBooks } from "./model";

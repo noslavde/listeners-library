@@ -1,3 +1,9 @@
+/**
+ * Regression tests covering saved passages. Uses synthetic fixtures; these
+ * checks do not verify real account sign-in, audio output or mobile
+ * synchronization.
+ */
+
 import { describe, expect, it } from "vitest";
 import { excerpt, parseStamp, passageError, passageOnly } from "./passages";
 describe("saved passages", () => {

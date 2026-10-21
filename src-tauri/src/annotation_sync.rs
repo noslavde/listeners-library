@@ -1,3 +1,8 @@
+//! Explicit experimental annotation reconciliation. Stable remote IDs, a
+//! three-way baseline and durable pending-write intents preserve local/cloud
+//! conflicts and prevent blind retries after uncertain sends; no automatic
+//! cloud deletion is performed.
+
 //! Conservative sync: stable IDs, three-way merges and verified individual writes.
 use crate::highlights::Passage;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -21,6 +26,8 @@ pub struct Receipt {
     missing: usize,
     message: String,
 }
+/// Create local link/baseline and uncertain-attempt tables. Local deletion
+/// hides a linked remote ID instead of deleting cloud data.
 pub fn schema(c: &Connection) -> Result<(), String> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS annotation_links(asin TEXT NOT NULL,remote_id TEXT NOT NULL,note_id INTEGER UNIQUE,base_json TEXT NOT NULL,remote_json TEXT NOT NULL,state TEXT NOT NULL,PRIMARY KEY(asin,remote_id));CREATE TABLE IF NOT EXISTS annotation_attempts(note_id INTEGER PRIMARY KEY,asin TEXT NOT NULL,token TEXT NOT NULL,desired_json TEXT NOT NULL);CREATE TRIGGER IF NOT EXISTS hide_deleted_annotations AFTER DELETE ON notes BEGIN UPDATE annotation_links SET note_id=NULL,state='hidden' WHERE note_id=old.rowid;DELETE FROM annotation_attempts WHERE note_id=old.rowid;END;").map_err(|_|"Cannot prepare encrypted annotation sync".into())
 }
@@ -134,6 +141,9 @@ fn linked(c: &Connection, asin: &str, r: &Remote, id: i64) -> Result<(), String>
     .map_err(|_| "Cannot finish annotation verification")?;
     Ok(())
 }
+/// Reconcile baseline/local/remote values atomically. Matching position alone is
+/// insufficient identity: only stable links or unique exact content may merge.
+/// Roll back the whole batch if one row cannot be interpreted safely.
 fn merge(c: &Connection, asin: &str, rows: &[Remote]) -> Result<Receipt, String> {
     crate::notes::schema(c)?;
     c.execute_batch("SAVEPOINT merge_annotations")
@@ -282,6 +292,9 @@ pub async fn annotation_sync_status(
     crate::metadata::annotations::available(&app, generation).await
 }
 #[tauri::command]
+/// Explicitly read and reconcile one owned title. Unknown/ambiguous remote
+/// responses must preserve local content rather than act as authoritative
+/// deletion.
 pub async fn pull_annotations(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -314,6 +327,8 @@ pub async fn pull_annotations(
     Ok(receipt)
 }
 #[tauri::command]
+/// Preflight against fresh remote state, persist a write intent, send one
+/// eligible item and verify by read-back. An uncertain send blocks blind retry.
 pub async fn push_annotation(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -453,6 +468,9 @@ pub async fn push_annotation(
     Ok("Verified by Audible read-back. Please confirm it appears on mobile.".into())
 }
 #[tauri::command]
+/// Apply the reviewed local/cloud conflict choice only if both previews still
+/// match. Adopting Audible keeps a separate PC copy; keeping local detaches the
+/// old remote link.
 pub fn resolve_annotation(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,

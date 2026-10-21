@@ -1,3 +1,9 @@
+/**
+ * Regression tests covering private error reporting. Uses synthetic fixtures;
+ * these checks do not verify real account sign-in, audio output or mobile
+ * synchronization.
+ */
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./playback", () => ({ desktop: true }));
 vi.mock("@tauri-apps/api/core", () => ({

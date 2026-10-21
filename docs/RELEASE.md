@@ -1,4 +1,4 @@
-# Maintainer release checklist — 0.2.1 beta
+# Maintainer release checklist — 0.2.7 beta
 
 This is a beta, not an independently audited stable release. User installation and troubleshooting instructions are in TESTER_GUIDE.md. Development history is not a user guide.
 

@@ -1,3 +1,9 @@
+/**
+ * Saved-moments layout, composer, filter and passage-card styles. Uses shared
+ * theme variables; component-specific classes keep the notes interface separate
+ * from the persistent player.
+ */
+
 .highlights {
   scroll-margin-top: 20px;
 }

@@ -1,10 +1,10 @@
-# Audible/mobile annotation sync — 0.2.6 test build
+# Audible/mobile annotation sync — 0.2.7 beta
 
 This is a controlled test of an unofficial API, not a verified automatic sync release. Use one owned US-marketplace title and disposable test items. Use the same account and edition on both devices. Pause playback first and note your listening position, because playing clips changes Audible's real timeline.
 
 ## 1. Preserve your data and connect
 
-Save drafts and export important notes before testing. Install 0.2.6 over the existing app; do not erase data or delete encryption keys. Older connections have no device-signing credentials. Use Account → Sign out, check **Enable Audible annotation sync (experimental)** beside Sign in, then complete normal Amazon sign-in. Your account's local saved items should return after library sync. The checkbox is optional; ordinary sign-in remains available without it.
+Save drafts and export important notes before testing. Install 0.2.7 over the existing app; do not erase data or delete encryption keys. Older connections have no device-signing credentials. Open **Settings**, use Account → Sign out, check **Enable Audible annotation sync (experimental)** beside Sign in, then complete normal Amazon sign-in. Your account's local saved items should return after library sync. The checkbox is optional; ordinary sign-in remains available without it.
 
 **Pass:** library loads, old notes remain, and the saved-items sync panel enables **Refresh from Audible**. If the panel still asks you to reconnect, stop and report the visible message only. Do not paste sign-in URLs, account files or full browser logs.
 

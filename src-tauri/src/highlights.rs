@@ -1,3 +1,8 @@
+//! Encrypted bookmark/note/clip metadata persistence and confirmed replay
+//! actions. Validates ranges against cached books, checks expected values
+//! before edits and uses the official player's timeline rather than recording
+//! audio.
+
 //! Bookmarks and clip ranges are metadata in the account's encrypted database.
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -11,6 +16,8 @@ pub struct Passage {
     pub end_position: Option<f64>,
     pub text: String,
 }
+/// Validate passage kinds, finite timestamps, UTF-8 length and clip length;
+/// cached-book bounds are checked separately during save.
 pub(crate) fn valid(p: &Passage) -> Result<(), String> {
     if !p.position.is_finite() || !(0.0..31_536_000.0).contains(&p.position) || p.text.len() > 10000
     {
@@ -30,6 +37,9 @@ pub(crate) fn valid(p: &Passage) -> Result<(), String> {
         _ => Err("Clips need an end after the start, up to five minutes long".into()),
     }
 }
+/// Persist local passage metadata inside a savepoint. Edits require the
+/// complete original passage so stale drafts cannot silently replace newer
+/// content.
 pub(crate) fn save(
     c: &Connection,
     asin: &str,
@@ -173,6 +183,8 @@ pub fn quick_bookmark(
     changed(app);
     Ok(())
 }
+/// Capture up to the preceding 30 seconds from a captured live
+/// snapshot/account; store metadata only, never audio bytes.
 pub fn quick_clip(
     app: &tauri::AppHandle,
     generation: u64,
@@ -210,6 +222,8 @@ pub fn show_highlights(app: tauri::AppHandle, window: tauri::WebviewWindow) -> R
         .map_err(|_| "Cannot open saved items".into())
 }
 #[tauri::command]
+/// Replay a validated saved range in a fresh full-title official player. This
+/// seeks the real timeline and may therefore affect Audible progress.
 pub fn play_saved_clip(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -273,6 +287,8 @@ pub fn play_saved_clip(
     })
 }
 #[tauri::command]
+/// Confirm an explicit bookmark/return seek before recording the deliberate
+/// choice in local history.
 pub async fn seek_highlight_position(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
