@@ -109,6 +109,18 @@ async fn apply_position(
     position: f64,
 ) -> Result<u64, String> {
     super::history::flush(app, "before-position-change")?;
+    // WebView getters may dispatch to the UI thread. Never wait for that
+    // thread while holding account/player locks needed by its telemetry.
+    let official = app
+        .get_webview_window("official")
+        .ok_or("Open the official player first")?;
+    let url = official.url().map_err(|_| "Player page unavailable")?;
+    if !super::allowed(&url)
+        || !matches!(url.host_str(), Some("audible.com" | "www.audible.com"))
+        || url.path() != "/webplayer"
+    {
+        return Err("Open full-book playback before syncing.".into());
+    }
     let hub = app.state::<super::desktop::PlayerHub>();
     super::metadata::with_account_generation(&app, generation, || {
         let state = hub.0.lock().map_err(|_| "Player state unavailable")?;
@@ -120,16 +132,6 @@ async fn apply_position(
         }
         let s = ready(&state, &asin, now())?;
         valid_target(s, position)?;
-        let official = app
-            .get_webview_window("official")
-            .ok_or("Open the official player first")?;
-        let url = official.url().map_err(|_| "Player page unavailable")?;
-        if !super::allowed(&url)
-            || !matches!(url.host_str(), Some("audible.com" | "www.audible.com"))
-            || url.path() != "/webplayer"
-        {
-            return Err("Open full-book playback before syncing.".into());
-        }
         let book = serde_json::to_string(&asin).map_err(|_| "Invalid book")?;
         // Recheck the actual page at execution time, after WebView's eval queue.
         official.eval(format!("if(new URL(location.href).searchParams.get('asin')==={book})window.__audibleAdapter?.command('seek',{position});"))

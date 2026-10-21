@@ -5,6 +5,7 @@ mod current_book;
 mod desktop;
 mod diagnostics;
 mod history;
+mod highlights;
 mod launch;
 mod lifecycle;
 mod listening;
@@ -895,6 +896,11 @@ fn main() {
         .manage(history::History::default())
         .manage(shortcuts::Shortcuts::new())
         .invoke_handler(tauri::generate_handler![
+            highlights::save_highlight,
+            highlights::delete_highlight,
+            highlights::play_saved_clip,
+            highlights::show_highlights,
+            highlights::seek_highlight_position,
             diagnostics::diagnostic_report,
             diagnostics::record_ui_error,
             diagnostics::export_diagnostics,

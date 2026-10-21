@@ -1,4 +1,4 @@
-# Getting started with Listener’s Library 0.2.4 beta
+# Getting started with Listener’s Library 0.2.5 beta
 
 An unofficial companion for Audible US on Windows 10/11 x64. You need your own Audible account, internet and access to the books you play. There are no offline downloads. The app is not affiliated with Audible or Amazon.
 
@@ -23,10 +23,14 @@ You can browse another series without interrupting playback. **Explore** groups 
 - Click the small book cover to open a larger, resizable artwork window. Close it with **Close ×**, the window's X or Escape; playback continues. Drag the title/author area to move the mini player.
 - In the app: Space plays/pauses; Left/Right skip; B saves a bookmark; M switches mini player/library. These shortcuts leave focused inputs and buttons alone.
 - Elsewhere in Windows: Ctrl+Alt+Space, Ctrl+Alt+Left/Right, Ctrl+Alt+B and Ctrl+Alt+M. Other apps may occupy a shortcut. Headset/media keys also work when Windows selects this app's media session.
-- Open **Notes & backups** in the library. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
+- Open **Bookmarks, clips & notes** in the library. Select a book to read its notes without playing it. Play that book to add a timestamped note. Drafts stay with their book while the app is open, but are cleared on sign-out or closing the app. Edit/Delete act on saved notes; deletion asks for confirmation.
 - To back up notes, expand the export section, type **EXPORT NOTES**, choose **Choose export file…** and select a private location. The JSON file is readable, unencrypted text. It contains notes/book identifiers, never login tokens or the encryption key. A cloud-synced destination may upload it. There is no automatic note import in this beta.
 
 ## Progress across devices
+
+For saved moments, **◇** in the mini player adds a bookmark, **✂** saves the preceding 30 seconds (less near the beginning), and **☷** opens **Bookmarks, clips & notes** in the library. Filter or search your items and edit their text. New clips have editable start/end times in `hours:minutes:seconds`, up to five minutes apart. Optional notes can describe a bookmark or clip. These items are encrypted locally and do not sync to Audible mobile.
+
+**Play clip** moves the official player's timeline and pauses at the saved end. **Return to listening** seeks back to the position before your first replay, confirms the player's new position and records that choice locally. It does not resume a paused player. Audible may sync the real timeline while you replay, so return before closing if you want to keep your original spot. **Go to bookmark** also confirms and saves your deliberate position choice. See [saved-items testing](BOOKMARKS_TEST.md).
 
 Audible's official player handles account progress. The companion separately saves dated PC checkpoints from confirmed listening, rather than from a newly loaded or paused player. A cloud check time is not a listening time. On opening a book, a difference of more than 15 seconds from the saved PC checkpoint pauses startup and opens **History**. Choose **Resume PC** or **Use Audible**. Our integration has no verified cloud listening time, so it does not guess which position is newer or assume the farthest position is the right one.
 
@@ -56,7 +60,7 @@ To choose a local checkpoint instead, open **Playback help & options → Saved p
 
 There is no automatic updater. Download the next Setup.exe from Releases, close every copy and install it. Updates from Listener’s Library 0.2.0 keep account profiles and notes. The older Audible Desktop installation may remain separately listed: do not run it or use it to bypass the newer account boundary. Remove its shortcut to avoid confusion.
 
-Earlier shared notes/history were not reliably linked to an account. They remain encrypted but are not automatically assigned. **Notes & backups → Export notes or recover notes from older versions** lets you type **EXPORT OLD NOTES** and save old notes to a private JSON file. This may contain notes from accounts used in older versions; only do it if you own those notes and control this Windows account. It does not merge notes/history into the current account. Recovery needs the original Windows-protected key; it cannot recover a lost key or another Windows user's data.
+Earlier shared notes/history were not reliably linked to an account. They remain encrypted but are not automatically assigned. **Bookmarks, clips & notes → Export & older notes** lets you type **EXPORT OLD NOTES** and save old notes to a private JSON file. This may contain notes from accounts used in older versions; only do it if you own those notes and control this Windows account. It does not merge notes/history into the current account. Recovery needs the original Windows-protected key; it cannot recover a lost key or another Windows user's data.
 
 If Amazon omits a stable account identity, the app warns that a later sign-in may open another isolated profile. Export important notes before signing out. Do not erase older stores hoping that this will fix missing data.
 

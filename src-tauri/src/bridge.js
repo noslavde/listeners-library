@@ -1,7 +1,8 @@
 // No Tauri IPC is granted to this remote page. This bridge only reports media state.
 (()=>{if(location.protocol!=='https:'||!['www.audible.com','audible.com'].includes(location.hostname)||location.pathname!=='/webplayer')return;
-let media,last=0,recovery=0,pausedAt=0,rewind=5,pauseChapter=false,chapter='',intentUntil=0,chapterStarts=[],configuredMedia,configuredSpeed,resumeHold=true;
+let media,last=0,recovery=0,pausedAt=0,rewind=5,pauseChapter=false,chapter='',intentUntil=0,chapterStarts=[],configuredMedia,configuredSpeed,resumeHold=true,clipRange=null;
 document.addEventListener?.('play',e=>{if(resumeHold&&e.target?.pause)e.target.pause();},true);
+document.addEventListener?.('seeking',e=>{if(clipRange&&e.target===clipRange.media&&(e.target.currentTime<clipRange.start||e.target.currentTime>clipRange.end))clipRange=null;},true);
 const ranges=r=>{const result=[];for(let i=0;i<Math.min(r.length,64);i++){const start=r.start(i),end=r.end(i);if(Number.isFinite(start)&&Number.isFinite(end)&&start>=0&&end>=start)result.push({start,end});}return result;};
 const find=()=>{const elements=[...document.querySelectorAll('audio,video')];const playing=elements.find(m=>!m.paused&&!m.ended&&m.readyState>0);if(playing)return playing;if(media&&elements.includes(media)&&media.readyState>0)return media;return elements.filter(m=>Number.isFinite(m.duration)&&m.duration>0).sort((a,b)=>b.duration-a.duration)[0]??elements[0];};
 const error=code=>{location.href='audible-control://error?code='+encodeURIComponent(code);};
@@ -16,20 +17,25 @@ window.__audibleAdapter={hold(value){const next=!!value;if(resumeHold&&!next)pau
  rewind=Math.max(0,Math.min(30,config.rewind));pauseChapter=!!config.pauseChapter;
  chapterStarts=Array.isArray(config.chapters)?config.chapters.filter(v=>Number.isFinite(v)&&v>=0).sort((a,b)=>a-b):[];
  window.__audibleVolume?.apply(m,Number.isFinite(config.volume)?config.volume:1);
-},command(action,value){const m=find();if(!m)return;intentUntil=Date.now()+2000;
+},command(action,value){const m=find();if(!m)return;if(['seek','recover'].includes(action))clipRange=null;intentUntil=Date.now()+2000;
 if(action==='play'&&!resumeHold){if(pausedAt&&Date.now()-pausedAt>60000)seek(m,Math.max(0,m.currentTime-rewind));m.play().catch(()=>error('play_blocked'));}
 if(action==='pause')m.pause();if(action==='seek')seek(m,value);
 if(action==='volume')window.__audibleVolume?.apply(m,value,true);
 if(action==='speed')m.playbackRate=value;if(action==='pauseChapter')pauseChapter=!!value;if(action==='rewind')rewind=Math.max(0,Math.min(30,value));if(action==='recover')seek(m,recovery);
 }};
+const stopClip=m=>{if(!clipRange)return;if(m!==clipRange.media||m.currentTime<clipRange.start-1){clipRange=null;return;}if(m.currentTime>=clipRange.end){const end=clipRange.end;clipRange=null;m.pause();seek(m,end);}};
+const clipMedia=new WeakSet();
+window.__audibleAdapter.clip=(start,end)=>{const m=find();if(!m||resumeHold||!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>300||!ranges(m.seekable).some(r=>start>=r.start&&end<=r.end)){error('unsupported_seek');return;}clipRange=null;if(!seek(m,start))return;pausedAt=0;intentUntil=Date.now()+2000;clipRange={media:m,start,end};if(!clipMedia.has(m)){clipMedia.add(m);m.addEventListener('timeupdate',()=>stopClip(m));}m.play().catch(()=>{clipRange=null;error('play_blocked');});};
+const selectChapter=window.__audibleAdapter.chapter;window.__audibleAdapter.chapter=value=>{clipRange=null;selectChapter(value);};
 setInterval(()=>{const m=find();if(m!==media){media=m;last=m?.currentTime??0;recovery=last;if(m)m.addEventListener('pause',()=>pausedAt=Date.now());}
 if(m){
+stopClip(m);
 if(resumeHold&&!m.paused)m.pause();
 const natural=Date.now()>intentUntil&&!m.seeking&&m.currentTime>=last&&m.currentTime-last<=20;
-if(pauseChapter&&natural&&chapterStarts.some(start=>start>last&&start<=m.currentTime))m.pause();
+if(!clipRange&&pauseChapter&&natural&&chapterStarts.some(start=>start>last&&start<=m.currentTime))m.pause();
 if(Date.now()>intentUntil&&Math.abs(m.currentTime-last)>20)recovery=last;last=m.currentTime;
 // Keep the old label fallback only when authoritative offsets are unavailable.
-const next=document.querySelector('[data-testid="chapter-title"]')?.textContent??'';if(!chapterStarts.length&&next&&chapter&&next!==chapter&&pauseChapter&&natural)m.pause();chapter=next;}
+const next=document.querySelector('[data-testid="chapter-title"]')?.textContent??'';if(!chapterStarts.length&&next&&chapter&&next!==chapter&&!clipRange&&pauseChapter&&natural)m.pause();chapter=next;}
 const sample=new URL(location.href).searchParams.get('isSample')==='true'||[...document.querySelectorAll('button,a')].some(e=>normalize(e.textContent)==='get this title');
 const config=document.getElementById?.('adbl-cloud-player-container-data');const flag=name=>{const value=config?.getAttribute(name);return value==='true'?true:value==='false'?false:null;};
 const volumeState=m?(window.__audibleVolume?.status(m)??{volume:m.muted?0:(m.volume??1)}):{volume:1};

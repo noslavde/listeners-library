@@ -1,0 +1,316 @@
+.highlights {
+  scroll-margin-top: 20px;
+}
+.highlight-total {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.highlights-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0;
+}
+.highlights-heading h2 {
+  font-size: 26px;
+  letter-spacing: -0.7px;
+  margin: 0 0 6px;
+}
+.highlights-heading p,
+.highlight-context,
+.highlight-footer p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+.highlight-local {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: var(--accent);
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  border-radius: 30px;
+}
+.highlight-toolbar {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.4fr) minmax(
+      130px,
+      0.6fr
+    );
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.highlight-toolbar label,
+.highlight-times label,
+.highlight-composer > label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.highlight-toolbar input,
+.highlight-toolbar select,
+.highlight-times input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.highlight-toolbar input[type="search"] {
+  background: var(--raised);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 40px;
+  padding: 8px 10px;
+  font: inherit;
+}
+.highlight-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.highlight-filters button {
+  background: transparent;
+  border-color: transparent;
+  font-size: 12px;
+}
+.highlight-filters button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+}
+.highlight-filters span {
+  margin-left: 6px;
+  color: var(--muted);
+}
+.highlight-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+}
+.highlight-create small {
+  flex-basis: 100%;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.highlight-composer {
+  padding: 20px;
+  margin: 18px 0;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--surface);
+  display: grid;
+  gap: 15px;
+}
+.highlight-composer header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.highlight-book-title {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+.highlight-times {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.highlight-times label {
+  flex: 1 1 130px;
+}
+.highlight-times input {
+  font-variant-numeric: tabular-nums;
+}
+.highlight-composer textarea {
+  min-height: 95px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+.highlight-composer small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.highlight-save {
+  justify-self: start;
+  border-color: var(--accent);
+}
+.highlight-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+.highlight-card {
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.highlight-card-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 22px;
+}
+.highlight-card-content {
+  min-width: 0;
+  flex: 1;
+}
+.highlight-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.highlight-kind {
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
+}
+.highlight-card h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 9px 0 5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.highlight-card .note-text {
+  margin: 6px 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.highlight-card time {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 5px;
+}
+.highlight-card-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+.highlight-card-actions button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.highlight-clip .highlight-card-actions button:first-child {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.highlight-card small {
+  display: block;
+  color: var(--muted);
+  margin-top: 9px;
+  font-size: 11px;
+}
+.highlight-empty {
+  text-align: center;
+  padding: 42px 18px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+.highlight-empty > span {
+  color: var(--accent);
+  font-size: 32px;
+}
+.highlight-empty h3 {
+  font-size: 17px;
+  margin: 14px 0 8px;
+}
+.highlight-empty p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.highlight-return,
+.highlight-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 14px;
+}
+.highlight-return {
+  justify-content: space-between;
+}
+.highlight-footer {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.highlight-footer summary {
+  font-size: 13px;
+  margin-top: 12px;
+}
+.highlight-footer label {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.highlight-footer input {
+  max-width: 320px;
+}
+.highlight-status {
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  font-size: 13px;
+  background: var(--surface);
+  line-height: 1.6;
+}
+.mini-compact .mini-controls {
+  gap: 4px;
+}
+.mini-compact .mini-controls button {
+  padding-left: 7px;
+  padding-right: 7px;
+}
+@media (max-width: 640px) {
+  .highlight-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .highlights-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .highlight-card {
+    padding: 14px;
+    gap: 10px;
+  }
+  .highlight-card-icon {
+    flex-basis: 28px;
+    height: 30px;
+    font-size: 18px;
+  }
+  .highlight-composer {
+    padding: 14px;
+  }
+}

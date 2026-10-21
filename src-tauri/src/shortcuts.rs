@@ -51,14 +51,10 @@ pub fn dispatch(app: &tauri::AppHandle, action: &str) -> Result<(), String> {
         });
         return Ok(());
     }
+    let generation=super::metadata::account_generation(app)?;
     let s = snapshot(app).ok_or("Wait for full-book playback before using this shortcut")?;
     if action == "bookmark" {
-        super::db(app)?
-            .execute(
-                "INSERT INTO notes(asin,position,text) VALUES(?1,?2,'Bookmark')",
-                rusqlite::params![s.asin, s.position],
-            )
-            .map_err(|_| "Cannot save bookmark")?;
+        crate::highlights::quick_bookmark(app,generation,&s)?;
         let _ = app.emit_to("main", "notes-changed", ());
         let _ = app.emit_to(
             "main",
@@ -66,6 +62,11 @@ pub fn dispatch(app: &tauri::AppHandle, action: &str) -> Result<(), String> {
             "Bookmark saved at the current position",
         );
         let _ = app.emit_to("mini-player", "shortcut-notice", "Bookmark saved");
+        return Ok(());
+    }
+    if action=="clip" {
+        crate::highlights::quick_clip(app,generation,&s)?;
+        let _=app.emit_to("mini-player","shortcut-notice","Saved the last 30 seconds as a clip (or the available time at the start)");
         return Ok(());
     }
     let (command, value) = match action {

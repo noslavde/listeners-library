@@ -415,14 +415,7 @@ function App() {
           </div>
         </section>
       </div>
-      {connected && (
-        <NotesPanel
-          books={books}
-          active={active}
-          snapshot={s}
-          onSeek={(p) => command("seek", p)}
-        />
-      )}
+      {connected && <NotesPanel books={books} active={active} snapshot={s} />}
       {desktop && connected && active && (
         <details className="app-details" open={!!history.status?.conflict}>
           <summary>Listening history & recovery</summary>

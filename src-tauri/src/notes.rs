@@ -9,11 +9,18 @@ pub struct Note {
     pub asin: String,
     pub position: f64,
     pub text: String,
+    pub kind: String,
+    pub end_position: Option<f64>,
+    pub created_ms: Option<i64>,
 }
 
+pub(crate) fn schema(c: &Connection) -> Result<(), String> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS note_details(note_id INTEGER PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('bookmark','note','clip')),end_position REAL,created_ms INTEGER); CREATE TRIGGER IF NOT EXISTS remove_note_details AFTER DELETE ON notes BEGIN DELETE FROM note_details WHERE note_id=old.rowid; END;").map_err(|_| "Cannot prepare bookmarks".to_string())
+}
 fn read(c: &Connection) -> Result<Vec<Note>, String> {
+    schema(c)?;
     let mut q = c
-        .prepare("SELECT rowid,asin,position,text FROM notes ORDER BY rowid")
+        .prepare("SELECT n.rowid,n.asin,n.position,n.text,COALESCE(d.kind,CASE WHEN n.text='Bookmark' THEN 'bookmark' ELSE 'note' END),d.end_position,d.created_ms FROM notes n LEFT JOIN note_details d ON d.note_id=n.rowid ORDER BY n.rowid")
         .map_err(|_| "Cannot read notes")?;
     let rows = q
         .query_map([], |r| {
@@ -22,6 +29,9 @@ fn read(c: &Connection) -> Result<Vec<Note>, String> {
                 asin: r.get(1)?,
                 position: r.get(2)?,
                 text: r.get(3)?,
+                kind: r.get(4)?,
+                end_position: r.get(5)?,
+                created_ms: r.get(6)?,
             })
         })
         .map_err(|_| "Cannot read notes")?;
@@ -53,7 +63,7 @@ fn with_db<T>(
 
 #[tauri::command]
 pub fn notes_session(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<u64, String> {
-    super::local(&window)?;
+    super::desktop::player_local(&window)?;
     super::metadata::account_generation(&app)
 }
 
@@ -63,7 +73,7 @@ pub fn list_notes(
     window: tauri::WebviewWindow,
     generation: u64,
 ) -> Result<Vec<Note>, String> {
-    super::local(&window)?;
+    super::desktop::player_local(&window)?;
     if !super::metadata::connected(&app) {
         return Ok(Vec::new());
     }
@@ -264,7 +274,7 @@ pub async fn export_notes(
     {
         return Err("Choose a .json file".into());
     }
-    let payload=serde_json::to_vec_pretty(&serde_json::json!({"format":"listeners-library-notes","version":1,"source":if old {"unassigned-old-store"}else{"current-account"},"notes":notes})).map_err(|_|"Cannot prepare notes export")?;
+    let payload=serde_json::to_vec_pretty(&serde_json::json!({"format":"listeners-library-notes","version":2,"source":if old {"unassigned-old-store"}else{"current-account"},"notes":notes})).map_err(|_|"Cannot prepare notes export")?;
     // No frontend-provided filesystem path, tokens, cookies or database key.
     super::metadata::with_account_generation(&app, generation, || write_export(&path, &payload))?;
     Ok(true)

@@ -1,10 +1,12 @@
-# Privacy and local data — 0.2.4 beta
+# Privacy and local data — 0.2.5 beta
 
 Listener’s Library is independent of Audible and Amazon. It has no app analytics, crash uploader or remote notes service. Audible/Amazon receive normal account and playback requests, and their official website may collect its own telemetry. Public book covers load from Amazon image servers.
 
 ## What stays on this PC
 
 Your library, notes, local listening history, saved positions and account-specific selections are stored in encrypted local databases. Login tokens and the database key are protected by Windows for the current Windows user. The key is random, is not in the installer and is not sent to the app interface. There is no unencrypted database fallback or developer recovery key.
+
+Bookmarks and clips use the same encrypted account database. They contain a book identifier, saved type, start/end positions, optional text and optional local creation time. No audio files are captured. Replaying a clip uses the official player and changes its real timeline, so Audible may sync that listening position. Return to listening seeks back explicitly. Saved clips/bookmarks themselves are not synced to or imported from Audible's mobile app. Their content is excluded from diagnostic reports. Readable notes exports include clip ranges and must be kept private.
 
 The recovery log stores book identifiers, playback positions, durations, local timestamps and event labels. It contains no audio, cookies or tokens. It is limited to 100 entries per book and 3,000 per account, with entries older than 90 days pruned on subsequent saves. The most recent checkpoint per book remains separately until replaced by listening or an explicit position choice. It is not an exhaustive listening history or a record of mobile sessions.
 
@@ -16,7 +18,7 @@ Appearance and window placement include nonsensitive local settings outside the 
 
 Current account libraries, notes and history have separate encrypted files. When Amazon supplies its stable account identity, returning to that account returns to the same profile. If identity is absent or an older credential has none, the app uses an isolated registration profile and warns that a later sign-in may open another profile. It does not guess identity from email or overlapping books.
 
-Old shared notes/history remain encrypted, but are not automatically assigned to anyone. **Notes & backups** offers an explicit old-notes export for the owner of those notes on this Windows account. It does not merge accounts or recover missing keys. The export may contain notes from accounts used in earlier versions; use it only if you own those notes and control this Windows account.
+Old shared notes/history remain encrypted, but are not automatically assigned to anyone. **Bookmarks, clips & notes → Export & older notes** offers an explicit old-notes export for the owner of those notes on this Windows account. It does not merge accounts or recover missing keys. The export may contain notes from accounts used in earlier versions; use it only if you own those notes and control this Windows account.
 
 ## Exports and backups
 

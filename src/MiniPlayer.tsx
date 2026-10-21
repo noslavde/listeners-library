@@ -251,6 +251,23 @@ export function MiniPlayer() {
         >
           ◇
         </button>
+        <button
+          aria-label="Save last 30 seconds as clip"
+          title="Save last 30 seconds as a clip"
+          disabled={!controlsAvailable || s.position < 1}
+          onClick={() =>
+            run(() => invoke("player_shortcut", { action: "clip" }))
+          }
+        >
+          ✂
+        </button>
+        <button
+          aria-label="Open bookmarks, clips and notes"
+          title="Bookmarks, clips & notes"
+          onClick={() => run(() => invoke("show_highlights"))}
+        >
+          ☷
+        </button>
       </div>
       <div className="mini-chapter">
         <button
@@ -442,7 +459,7 @@ export function MiniPlayer() {
                 Show Audible player
               </button>
               <p className="mini-version">
-                Listener’s Library · 0.2.4 · Unofficial beta
+                Listener’s Library · 0.2.5 · Unofficial beta
               </p>
             </>
           )}

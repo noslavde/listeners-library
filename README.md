@@ -26,9 +26,11 @@ In the 0.2.4 local test build, closing the main library exits the app; closing t
 
 ## Your data
 
+The 0.2.5 local test build adds **Bookmarks, clips & notes**, with searchable saved moments, editable clip ranges and mini-player capture. Clips replay through the official player; they are local metadata, not audio files, and do not sync to mobile. See [saved-items checks](docs/BOOKMARKS_TEST.md).
+
 Account tokens and local library/notes are protected on this Windows account. Website sign-in uses a separate local browser profile. No app analytics or crash uploader is added; Audible's official pages still contact their own services. This is not an independently audited product. Read [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md).
 
-**Before updating older builds:** close them all. Updating Listener’s Library 0.2.0 retains its account profiles. Older unassigned notes/history are kept encrypted but do not automatically appear in a new account profile. Under **Notes & backups**, you can explicitly export old notes to a private JSON file. No automatic ownership guess or merge is made. Keep the encryption key and Windows profile; there is no developer recovery key.
+**Before updating older builds:** close them all. Updating Listener’s Library 0.2.0 retains its account profiles. Older unassigned notes/history are kept encrypted but do not automatically appear in a new account profile. Under **Bookmarks, clips & notes → Export & older notes**, you can explicitly export old notes to a private JSON file. No automatic ownership guess or merge is made. Keep the encryption key and Windows profile; there is no developer recovery key.
 
 The earlier Audible Desktop installation may remain as a separate entry. Use only Listener’s Library and remove the old shortcut to avoid opening an unsafe older build. See the guide before deleting local data.
 
